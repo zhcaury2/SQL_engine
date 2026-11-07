@@ -66,3 +66,23 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Editors
+.vscode/
+.idea/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Datasets
+data/*.csv
+!data/sample.csv
+
+# Debug / profiling
+*.dSYM/
+core
+core.*
+perf.data*
+callgrind.out.*
