@@ -1,13 +1,13 @@
+#pragma once
 #include <iostream>
 #include <string>
 #include <vector>
-using namespace std;
 
-enum class TokenType { Keyword, Identifier, Number, Symbol, String};
+enum class TokenType { Keyword, Identifier, Number, Symbol, String, End};
 
 struct Token {
     TokenType type;
-    string text;
+    std::string text;
 };
 
-vector<Token> parseSQLquery(string query);
+std::vector<Token> parseSQLquery(std::string query);

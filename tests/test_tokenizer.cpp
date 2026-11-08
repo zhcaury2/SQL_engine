@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "tokenize.h"
+#include "parse.h"
 
 TEST(Tokenizer, EmptyInput) {
     EXPECT_TRUE(parseSQLquery("").empty());
