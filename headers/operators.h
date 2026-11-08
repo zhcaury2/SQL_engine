@@ -30,3 +30,12 @@ public:
     Filter(std::unique_ptr<Operator> child, size_t colIdx, std::string op, Value literal);
     bool next(Row& out) override;
 };
+
+
+class Project : public Operator {
+    std::unique_ptr<Operator> child;
+    std::vector<size_t> columns;
+public:
+    Project(std::unique_ptr<Operator> child, std::vector<size_t> columns);
+    bool next(Row& out) override;
+};

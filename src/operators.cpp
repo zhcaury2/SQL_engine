@@ -48,3 +48,16 @@ bool Filter::matches(const Value& cell) const {
     }
     return false;
 }
+
+Project::Project(std::unique_ptr<Operator> c, std::vector<size_t> cols)
+    : child(std::move(c)), columns(std::move(cols)) {}
+
+bool Project::next(Row& out) {
+    Row row;
+    if (!child->next(row)) return false;
+    out.clear();
+    out.reserve(columns.size());
+    for (size_t col : columns) out.push_back(row[col]);
+    return true;
+}
+
