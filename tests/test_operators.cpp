@@ -1,13 +1,33 @@
 #include <gtest/gtest.h>
 #include "operators.h"
 
-static Table makeTable(std::vector<Row> rows) {
+#include <gtest/gtest.h>
+#include <variant>
+#include "operators.h"
+
+static Table makeUsers() {
     Table t;
-    t.name = "t";
-    t.columns = {"a", "b", "c"};
-    t.rows = std::move(rows);
+    t.name = "users";
+    t.columns = {"username", "password", "age"};
+    for (size_t i = 0; i < t.columns.size(); ++i) t.colIndex[t.columns[i]] = i;
+    t.rows = {
+        {std::string("a"), std::string("a2"), 18.0},
+        {std::string("b"), std::string("b2"), 19.0},
+        {std::string("c"), std::string("c2"), 20.0},
+    };
     return t;
 }
+
+static std::vector<std::string> runFilter(const Table& table, size_t col,
+                                          const std::string& op, Value literal) {
+    Filter f(std::make_unique<Scan>(table), col, op, std::move(literal));
+    std::vector<std::string> names;
+    Row row;
+    while (f.next(row)) names.push_back(std::get<std::string>(row[0]));
+    return names;
+}
+
+using Names = std::vector<std::string>;
 
 TEST(ScanTest, NextRow) {
     Table table;
@@ -37,52 +57,136 @@ TEST(ScanTest, EmptyTable) {
     EXPECT_FALSE(scan.next(out));
 }
 
-TEST(FilterTest, NextRow) {
-    Table table;
-    table.columns = {"a", "b", "c"};
-    table.rows = {
-        {1.0, 2.0, 3.0},
-        {4.0, 5.0, 6.0}
-    };
-
-    Scan scan(table);
-    Filter filter(table, scan);
-    Row out;
-
-    ASSERT_TRUE(filter.next(out));
-    EXPECT_EQ(out, (Row{1.0, 2.0, 3.0}));
-
-    ASSERT_TRUE(filter.next(out));
-    EXPECT_EQ(out, (Row{4.0, 5.0, 6.0}));
-
-    EXPECT_FALSE(filter.next(out));
+TEST(Filter, NumberGreaterThan) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 2, ">", 18.0), (Names{"b", "c"}));
 }
 
-TEST(FilterTest, EmptyTable) {
-    Table table;
-    Scan scan(table);
-    Filter filter(table, scan);
-    Row out;
-
-    EXPECT_FALSE(filter.next(out));
+TEST(Filter, NumberGreaterOrEqual) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 2, ">=", 19.0), (Names{"b", "c"}));
 }
 
-TEST(FilterTest, RecursiveFiltering){
-    Table table = makeTable({
-        {1.0, 2.0, 3.0},
-        {4.0, 5.0, 6.0}
-    });
+TEST(Filter, NumberLessThan) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 2, "<", 19.0), (Names{"a"}));
+}
 
-    Scan scan(table);
-    Filter filter1(table, scan);
-    Filter filter2(table, filter1);
-    Row out;
+TEST(Filter, NumberLessOrEqual) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 2, "<=", 19.0), (Names{"a", "b"}));
+}
 
-    ASSERT_TRUE(filter2.next(out));
-    EXPECT_EQ(out, (Row{1.0, 2.0, 3.0}));
+TEST(Filter, NumberEquals) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 2, "=", 19.0), (Names{"b"}));
+}
 
-    ASSERT_TRUE(filter2.next(out));
-    EXPECT_EQ(out, (Row{4.0, 5.0, 6.0}));
+TEST(Filter, NumberNotEquals) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 2, "!=", 19.0), (Names{"a", "c"}));
+}
 
-    EXPECT_FALSE(filter2.next(out));
+TEST(Filter, StringEquals) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 0, "=", std::string("c")), (Names{"c"}));
+}
+
+TEST(Filter, StringNotEquals) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 0, "!=", std::string("b")), (Names{"a", "c"}));
+}
+
+TEST(Filter, StringLessThan) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 0, "<", std::string("b")), (Names{"a"}));
+}
+
+TEST(Filter, StringGreaterOrEqual) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 0, ">=", std::string("b")), (Names{"b", "c"}));
+}
+
+TEST(Filter, NoMatchesReturnsFalseImmediately) {
+    Table t = makeUsers();
+    Filter f(std::make_unique<Scan>(t), 2, ">", Value(100.0));
+    Row row;
+    EXPECT_FALSE(f.next(row));
+}
+
+TEST(Filter, AllRowsMatch) {
+    Table t = makeUsers();
+    EXPECT_EQ(runFilter(t, 2, ">", 0.0), (Names{"a", "b", "c"}));
+}
+
+TEST(Filter, EmptyTable) {
+    Table t = makeUsers();
+    t.rows.clear();
+    EXPECT_TRUE(runFilter(t, 2, ">", 0.0).empty());
+}
+
+TEST(Filter, StaysExhausted) {
+    Table t = makeUsers();
+    Filter f(std::make_unique<Scan>(t), 2, "=", Value(20.0));
+    Row row;
+    ASSERT_TRUE(f.next(row));
+    EXPECT_FALSE(f.next(row));
+    EXPECT_FALSE(f.next(row));
+}
+
+TEST(Filter, ReturnsFullUnchangedRow) {
+    Table t = makeUsers();
+    Filter f(std::make_unique<Scan>(t), 2, "=", Value(19.0));
+    Row row;
+    ASSERT_TRUE(f.next(row));
+    ASSERT_EQ(row.size(), 3u);
+    EXPECT_EQ(std::get<std::string>(row[0]), "b");
+    EXPECT_EQ(std::get<std::string>(row[1]), "b2");
+    EXPECT_DOUBLE_EQ(std::get<double>(row[2]), 19.0);
+}
+
+TEST(Filter, SkipsSeveralRowsInOneCall) {
+    // Only the last row matches, so one next() must consume all three child rows.
+    Table t = makeUsers();
+    Filter f(std::make_unique<Scan>(t), 2, "=", Value(20.0));
+    Row row;
+    ASSERT_TRUE(f.next(row));
+    EXPECT_EQ(std::get<std::string>(row[0]), "c");
+    EXPECT_FALSE(f.next(row));
+}
+
+TEST(Filter, NullNeverMatchesAnyOperator) {
+    Table t = makeUsers();
+    t.rows[1][2] = std::monostate{};          // b's age is NULL
+    EXPECT_EQ(runFilter(t, 2, ">", 0.0),  (Names{"a", "c"}));
+    EXPECT_EQ(runFilter(t, 2, "!=", 18.0), (Names{"c"}));   // NULL must NOT pass !=
+    EXPECT_EQ(runFilter(t, 2, "=", 19.0),  (Names{}));
+}
+
+TEST(Filter, NumberColumnVsStringLiteralNeverMatches) {
+    Table t = makeUsers();
+    EXPECT_TRUE(runFilter(t, 2, "=", std::string("abc")).empty());
+    EXPECT_TRUE(runFilter(t, 2, "!=", std::string("abc")).empty());   // mismatch is not "unequal"
+}
+
+TEST(Filter, TextColumnVsNumberLiteralNeverMatches) {
+    Table t = makeUsers();
+    EXPECT_TRUE(runFilter(t, 0, "=", 5.0).empty());
+    EXPECT_TRUE(runFilter(t, 0, "!=", 5.0).empty());
+}
+
+TEST(Filter, TwoFiltersStackLikeAnd) {
+    // age >= 19 AND username < 'c'  ->  only b
+    Table t = makeUsers();
+    auto inner = std::make_unique<Filter>(std::make_unique<Scan>(t), 2, ">=", Value(19.0));
+    Filter outer(std::move(inner), 0, "<", Value(std::string("c")));
+    Row row;
+    ASSERT_TRUE(outer.next(row));
+    EXPECT_EQ(std::get<std::string>(row[0]), "b");
+    EXPECT_FALSE(outer.next(row));
+}
+
+TEST(Filter, UnknownOperatorThrowsAtConstruction) {
+    Table t = makeUsers();
+    EXPECT_THROW(Filter(std::make_unique<Scan>(t), 2, "~", Value(1.0)), std::runtime_error);
 }
