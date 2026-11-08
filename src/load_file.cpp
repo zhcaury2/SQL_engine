@@ -32,6 +32,7 @@ static std::vector<std::vector<std::string>> readRawRows(std::ifstream& file, si
     std::vector<std::vector<std::string>> rows;
     std::string line;
     while (std::getline(file, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty()) continue;
         std::vector<std::string> fields = splitLine(line);
         if (fields.size() != expectedFields) {
@@ -44,7 +45,6 @@ static std::vector<std::vector<std::string>> readRawRows(std::ifstream& file, si
 
 // Returns true if all values in column 'col' are numbers
 static bool isNumbers(const std::vector<std::vector<std::string>>& raw, size_t col) {
-    if (raw.empty()) return false;
     for (const auto& row : raw) {
         const std::string& value = row[col];
         if (value.empty()) continue;
