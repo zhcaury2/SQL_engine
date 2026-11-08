@@ -10,4 +10,5 @@ struct Token {
     std::string text;
 };
 
+//Tokenizes query and determines token types
 std::vector<Token> parseSQLquery(std::string query);
