@@ -21,35 +21,57 @@ Token Parser::advance() {
     return t;
 }
 
-Token Parser::expect(const Token& token, const string text) {
-    if (peek().type == token.type && (text.empty() || peek().text == text)) {
+Token Parser::expect(TokenType type, const string text) {
+    if (peek().type == type && (text.empty() || peek().text == text)) {
         return advance();
     }
-    throw std::runtime_error("Expected token: " + token.text + ", got: " + peek().text);
+    throw std::runtime_error("Expected token: " + text + ", got: " + peek().text);
 }
 
-SelectStatement Parser::parseSelect() {
-    SelectStatement stmt;
-    expect(Token{TokenType::Keyword, "SELECT"}, "SELECT");
+void Parser::parseSelectColumns(SelectStatement& stmt) {
+    expect(TokenType::Keyword, "SELECT");
     if (peek().text == "*" && peek().type == TokenType::Symbol) {
         stmt.columns.push_back("*");
         advance();
     }
     else {
-        stmt.columns.push_back(expect(Token{TokenType::Identifier}, "").text);
-        while (peek().text == ",") {
+        stmt.columns.push_back(expect(TokenType::Identifier, "").text);
+        while (peek().type == TokenType::Symbol && peek().text == ",") {
             advance();
-            stmt.columns.push_back(expect(Token{TokenType::Identifier}, "").text);
+            stmt.columns.push_back(expect(TokenType::Identifier, "").text);
         }
     }
-    expect(Token{TokenType::Keyword, "FROM"}, "FROM");
-    stmt.table = expect(Token{TokenType::Identifier}, "").text;
-    if (peek().text == "WHERE") {
-        stmt.hasCondition = true;
-        expect(Token{TokenType::Keyword, "WHERE"}, "WHERE");
-        stmt.conditionColumn = expect(Token{TokenType::Identifier}, "").text;
-        stmt.conditionSymbol = expect(Token{TokenType::Symbol}, "").text;
-        stmt.conditionValue = expect(Token{TokenType::Number}, "").text;
+}
+
+void Parser::parseSelectTable(SelectStatement& stmt) {
+    expect(TokenType::Keyword, "FROM");
+    stmt.table = expect(TokenType::Identifier, "").text;
+}
+
+void Parser::parseWhere(SelectStatement& stmt) {
+    expect(TokenType::Keyword, "WHERE");
+    stmt.hasCondition = true;
+    stmt.conditionColumn = expect(TokenType::Identifier, "").text;
+
+    Token symbol = expect(TokenType::Symbol, "");
+    if (symbol.text != ">" && symbol.text != "<" && symbol.text != "=" && symbol.text != "<=" && symbol.text != ">=" && symbol.text != "!=") {
+        throw std::runtime_error("Invalid condition symbol: " + symbol.text);
+    }
+    stmt.conditionSymbol = symbol.text;
+    Token value = advance();
+    if (value.type != TokenType::Number && value.type != TokenType::String) {
+        throw std::runtime_error("Expected number or string, got: " + value.text);
+    }
+    stmt.conditionValue = value.text;
+    stmt.conditionValueType = value.type;
+}
+
+SelectStatement Parser::parseSelect() {
+    SelectStatement stmt;
+    parseSelectColumns(stmt);
+    parseSelectTable(stmt);
+    if (peek().text == "WHERE" && peek().type == TokenType::Keyword) {
+        parseWhere(stmt);
     }
     if (peek().type != TokenType::End) {
         throw std::runtime_error("Expected end of statement, got: " + peek().text);
