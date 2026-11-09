@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # All real code goes in this library
-add_library(sql_core src/tokenize.cpp src/parse.cpp src/load_file.cpp src/operators.cpp src/planner.cpp)
+add_library(sql_core src/tokenize.cpp src/parse.cpp src/load_file.cpp src/operators.cpp src/planner.cpp src/printer.cpp)
 target_include_directories(sql_core PUBLIC headers)
 
 # The program itself

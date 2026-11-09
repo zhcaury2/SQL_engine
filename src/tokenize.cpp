@@ -5,13 +5,20 @@
 #include "../headers/tokenize.h"
 #include <stdexcept>
 
-const std::string keywords[] = {"select", "from", "where"};
+static const std::string keywords[] = {"select", "from", "where"};
+
+static std::string toLower(std::string s) {
+    for (char& ch : s) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    return s;
+}
+
+static std::string toUpper(std::string s) {
+    for (char& ch : s) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    return s;
+}
 
 bool checkKeywords(const std::string &identifier) {
-    std::string lowerIdentifier = identifier;
-    for (char &ch : lowerIdentifier) {
-        ch = static_cast<char>(tolower(ch));
-    }
+    std::string lowerIdentifier = toLower(identifier);
     for (const std::string &keyword : keywords) {
         if (lowerIdentifier == keyword) {
             return true;
@@ -25,23 +32,20 @@ std::vector<Token> parseSQLquery(std::string query){
     size_t i = 0;
     while (i < query.size()) {
         char c = query[i];
-        if (isalpha(c) || c == '_') {
+        if (isalpha(static_cast<unsigned char>(c)) || c == '_') {
             std::string identifier;
-            while (i < query.size() && (isalnum(query[i]) || query[i] == '_')) {
+            while (i < query.size() && (isalnum(static_cast<unsigned char>(query[i])) || query[i] == '_')) {
                 identifier += query[i];
                 i++;
             }
             if (checkKeywords(identifier)) {
-                for (char &ch : identifier) {
-                    ch = static_cast<char>(toupper(ch));
-                }
-                tokens.push_back({TokenType::Keyword, identifier});
+                tokens.push_back({TokenType::Keyword, toUpper(identifier)});
             } else {
-                tokens.push_back({TokenType::Identifier, identifier});
+                tokens.push_back({TokenType::Identifier, toLower(identifier)});
             }
-        } else if (isdigit(c)) {
+        } else if (isdigit(static_cast<unsigned char>(c))) {
             std::string number;
-            while (i < query.size() && isdigit(query[i])) {
+            while (i < query.size() && (isdigit(static_cast<unsigned char>(query[i])) || query[i] == '.')) {
                 number += query[i];
                 i++;
             }
@@ -54,10 +58,10 @@ std::vector<Token> parseSQLquery(std::string query){
             while (i < query.size() && query[i] != '\'') {
                 value += query[i];
                 i++;
-                if (i >= query.size()) {
+            }
+            if (i >= query.size()) {
                     throw std::runtime_error("Unterminated string literal");
                 }
-            }
             i++;
             tokens.push_back({TokenType::String, value});
         } else {

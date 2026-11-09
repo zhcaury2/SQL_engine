@@ -73,6 +73,9 @@ SelectStatement Parser::parseSelect() {
     if (peek().text == "WHERE" && peek().type == TokenType::Keyword) {
         parseWhere(stmt);
     }
+    if (peek().type == TokenType::Symbol && peek().text == ";") {
+        advance();
+    }
     if (peek().type != TokenType::End) {
         throw std::runtime_error("Expected end of statement, got: " + peek().text);
     }
