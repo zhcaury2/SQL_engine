@@ -35,8 +35,8 @@ std::unique_ptr<Operator> buildPlan(const SelectStatement& stmt, const std::map<
     std::vector<size_t> projectionIndices;
 
     if (stmt.columns.size() == 1 && stmt.columns[0] == "*") {
-        for (const auto& column : table.columns) {
-            projectionIndices.push_back(getColumnIndex(table, column));
+        for (size_t i = 0; i < table.columns.size(); ++i) {
+            projectionIndices.push_back(i);
         }
     } else {
         for (const auto& column : stmt.columns) {

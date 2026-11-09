@@ -4,12 +4,7 @@
 #include <utility>
 #include <stdexcept>
 #include <cstdlib>
-#include <cctype>
-
-static std::string toLower(std::string s) {
-    for (char& ch : s) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    return s;
-}
+#include "helpers.h"
 
 //Splits line into a vector of strings. Used for initial parsing of file.
 static std::vector<std::string> splitLine(const std::string& line) {
@@ -97,6 +92,10 @@ Table loadCsv(const std::string& filename, const std::string& name) {
 
     if (!std::getline(file, line)) throw std::runtime_error("CSV file is empty: " + filename);
     if (!line.empty() && line.back() == '\r') line.pop_back();
+
+    if (line.compare(0, 3, "\xEF\xBB\xBF") == 0) {
+        line.erase(0, 3);
+    }
 
     table.columns = splitLine(line);
     for (size_t i = 0; i < table.columns.size(); ++i) {

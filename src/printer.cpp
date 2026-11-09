@@ -9,7 +9,7 @@
 static std::string valueToString(const Value& v) {
     if (const double* d = std::get_if<double>(&v)) {
         std::ostringstream ss;
-        ss << *d;
+        ss << std::setprecision(15) << *d;
         return ss.str();
     }
     if (const std::string* s = std::get_if<std::string>(&v)) return *s;

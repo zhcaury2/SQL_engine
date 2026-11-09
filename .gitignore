@@ -79,6 +79,8 @@ desktop.ini
 # Datasets
 data/*.csv
 !data/sample.csv
+!data/users.csv
+!data/movies.csv
 
 # Debug / profiling
 *.dSYM/

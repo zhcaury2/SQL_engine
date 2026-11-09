@@ -4,18 +4,10 @@
 #include <cctype>
 #include "../headers/tokenize.h"
 #include <stdexcept>
+#include "helpers.h"
+
 
 static const std::string keywords[] = {"select", "from", "where"};
-
-static std::string toLower(std::string s) {
-    for (char& ch : s) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    return s;
-}
-
-static std::string toUpper(std::string s) {
-    for (char& ch : s) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-    return s;
-}
 
 bool checkKeywords(const std::string &identifier) {
     std::string lowerIdentifier = toLower(identifier);
@@ -32,6 +24,7 @@ std::vector<Token> parseSQLquery(std::string query){
     size_t i = 0;
     while (i < query.size()) {
         char c = query[i];
+        size_t dots = 0;
         if (isalpha(static_cast<unsigned char>(c)) || c == '_') {
             std::string identifier;
             while (i < query.size() && (isalnum(static_cast<unsigned char>(query[i])) || query[i] == '_')) {
@@ -46,6 +39,12 @@ std::vector<Token> parseSQLquery(std::string query){
         } else if (isdigit(static_cast<unsigned char>(c))) {
             std::string number;
             while (i < query.size() && (isdigit(static_cast<unsigned char>(query[i])) || query[i] == '.')) {
+                if (query[i] == '.') {
+                    if (dots > 0) {
+                        throw std::runtime_error("Invalid number literal");
+                    }
+                    dots++;
+                }
                 number += query[i];
                 i++;
             }

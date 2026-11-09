@@ -8,6 +8,7 @@
 #include "parse.h"
 #include "load_file.h"
 #include "printer.h"
+#include "helpers.h"
 namespace fs = std::filesystem;
 
 static std::map<std::string, Table> loadTables(const std::string& directory) {
@@ -16,7 +17,7 @@ static std::map<std::string, Table> loadTables(const std::string& directory) {
         if (entry.path().extension() != ".csv") {
             continue;
         }
-        std::string tableName = entry.path().stem().string();
+        std::string tableName = toLower(entry.path().stem().string());
         tables.emplace(tableName, loadCsv(entry.path().string(), tableName));
     }
     return tables;
@@ -50,7 +51,7 @@ int main() {
             auto names = headerNames(stmt, table);
             printResult(*plan, names);
         } catch (const std::exception& e) {
-            std::cerr << "Error parsing query: " << e.what() << std::endl;
+            std::cerr << "Error: " << e.what() << std::endl;
         }
     }
     return 0;

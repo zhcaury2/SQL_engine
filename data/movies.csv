@@ -1,0 +1,32 @@
+title,genres,director,year,actors,price
+The Shawshank Redemption,Drama,Frank Darabont,1994,Tim Robbins;Morgan Freeman,9.99
+The Godfather,Crime;Drama,Francis Ford Coppola,1972,Marlon Brando;Al Pacino;James Caan,12.99
+The Dark Knight,Action;Crime;Drama,Christopher Nolan,2008,Christian Bale;Heath Ledger;Aaron Eckhart,14.99
+Pulp Fiction,Crime;Drama,Quentin Tarantino,1994,John Travolta;Samuel L. Jackson;Uma Thurman,11.99
+Forrest Gump,Drama;Romance,Robert Zemeckis,1994,Tom Hanks;Robin Wright;Gary Sinise,10.99
+Inception,Action;Sci-Fi;Thriller,Christopher Nolan,2010,Leonardo DiCaprio;Joseph Gordon-Levitt;Elliot Page,13.99
+The Matrix,Action;Sci-Fi,Lana Wachowski;Lilly Wachowski,1999,Keanu Reeves;Laurence Fishburne;Carrie-Anne Moss,9.99
+Goodfellas,Crime;Drama,Martin Scorsese,1990,Ray Liotta;Robert De Niro;Joe Pesci,10.99
+Fight Club,Drama;Thriller,David Fincher,1999,Brad Pitt;Edward Norton;Helena Bonham Carter,9.99
+Interstellar,Adventure;Drama;Sci-Fi,Christopher Nolan,2014,Matthew McConaughey;Anne Hathaway;Jessica Chastain,12.99
+Parasite,Comedy;Drama;Thriller,Bong Joon-ho,2019,Song Kang-ho;Lee Sun-kyun;Cho Yeo-jeong,14.99
+Spirited Away,Animation;Adventure;Fantasy,Hayao Miyazaki,2001,Rumi Hiiragi;Miyu Irino,9.99
+Jurassic Park,Adventure;Sci-Fi,Steven Spielberg,1993,Sam Neill;Laura Dern;Jeff Goldblum,10.99
+Titanic,Drama;Romance,James Cameron,1997,Leonardo DiCaprio;Kate Winslet;Billy Zane,11.99
+Gladiator,Action;Adventure;Drama,Ridley Scott,2000,Russell Crowe;Joaquin Phoenix;Connie Nielsen,10.99
+The Silence of the Lambs,Crime;Horror;Thriller,Jonathan Demme,1991,Jodie Foster;Anthony Hopkins,9.99
+Back to the Future,Adventure;Comedy;Sci-Fi,Robert Zemeckis,1985,Michael J. Fox;Christopher Lloyd;Lea Thompson,8.99
+Toy Story,Animation;Adventure;Comedy,John Lasseter,1995,Tom Hanks;Tim Allen;Don Rickles,8.99
+Alien,Horror;Sci-Fi,Ridley Scott,1979,Sigourney Weaver;Tom Skerritt;John Hurt,9.99
+Get Out,Horror;Mystery;Thriller,Jordan Peele,2017,Daniel Kaluuya;Allison Williams;Catherine Keener,11.99
+Mad Max Fury Road,Action;Adventure;Sci-Fi,George Miller,2015,Tom Hardy;Charlize Theron;Nicholas Hoult,12.99
+La La Land,Comedy;Drama;Musical;Romance,Damien Chazelle,2016,Ryan Gosling;Emma Stone;John Legend,12.99
+Whiplash,Drama;Music,Damien Chazelle,2014,Miles Teller;J.K. Simmons,9.99
+The Lion King,Animation;Adventure;Drama,Roger Allers;Rob Minkoff,1994,Matthew Broderick;Jeremy Irons;James Earl Jones,9.99
+Casablanca,Drama;Romance;War,Michael Curtiz,1942,Humphrey Bogart;Ingrid Bergman;Paul Henreid,7.99
+Psycho,Horror;Mystery;Thriller,Alfred Hitchcock,1960,Anthony Perkins;Janet Leigh;Vera Miles,7.99
+Blade Runner 2049,Drama;Mystery;Sci-Fi,Denis Villeneuve,2017,Ryan Gosling;Harrison Ford;Ana de Armas,12.99
+Amelie,Comedy;Romance,Jean-Pierre Jeunet,2001,Audrey Tautou;Mathieu Kassovitz,9.99
+Superbad,Comedy,Greg Mottola,2007,Jonah Hill;Michael Cera;Christopher Mintz-Plasse,8.99
+The Grand Budapest Hotel,Adventure;Comedy;Crime,Wes Anderson,2014,Ralph Fiennes;F. Murray Abraham;Tony Revolori,11.99
+Coco,Animation;Adventure;Family,Lee Unkrich,2017,Anthony Gonzalez;Gael Garcia Bernal;Benjamin Bratt,10.99
