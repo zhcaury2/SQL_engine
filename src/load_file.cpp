@@ -27,7 +27,7 @@ static bool toDouble(const std::string& s, double& out){
     return end != s.c_str() && *end == '\0';
 }
 
-// Reads all rows of file as strings
+// Reads all rows of file as strings.
 static std::vector<std::vector<std::string>> readRawRows(std::ifstream& file, size_t expectedFields){
     std::vector<std::vector<std::string>> rows;
     std::string line;
@@ -43,7 +43,7 @@ static std::vector<std::vector<std::string>> readRawRows(std::ifstream& file, si
     return rows;
 }
 
-// Returns true if all values in column 'col' are numbers
+// Returns true if all values in column 'col' are numbers.
 static bool isNumbers(const std::vector<std::vector<std::string>>& raw, size_t col) {
     for (const auto& row : raw) {
         const std::string& value = row[col];
@@ -54,7 +54,7 @@ static bool isNumbers(const std::vector<std::vector<std::string>>& raw, size_t c
     return true;
 }
 
-//Converts one cell to appropriate type
+// Converts one cell to appropriate type.
 static Value convertCell(const std::string& text, bool columnIsNumeric){
     if (text.empty()) return std::monostate{};
     double value;
@@ -62,7 +62,7 @@ static Value convertCell(const std::string& text, bool columnIsNumeric){
     return text;
 }
 
-//Converts rows to appropriate type
+// Converts rows to appropriate type.
 static Row convertRow(const std::vector<std::string>& raw, const std::vector<bool>& columnIsNumeric) {
     Row row;
     for (size_t col = 0; col < raw.size(); ++col) {
@@ -71,7 +71,7 @@ static Row convertRow(const std::vector<std::string>& raw, const std::vector<boo
     return row;
 }
 
-// Returns which columns are numbers
+// Returns which columns are numbers.
 static std::vector<bool> columnAsNumbers(const std::vector<std::vector<std::string>>& raw, size_t cols) {
     std::vector<bool> numbers(cols);
     for (size_t col = 0; col < cols; ++col) {
@@ -80,7 +80,7 @@ static std::vector<bool> columnAsNumbers(const std::vector<std::vector<std::stri
     return numbers;
 }
 
-// Loads a CSV file into a Table
+// Loads a CSV file into a Table.
 Table loadCsv(const std::string& filename, const std::string& name) {
     Table table;
     table.name = name;
