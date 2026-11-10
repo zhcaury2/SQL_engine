@@ -86,3 +86,33 @@ TEST(Tokenizer, AndOrKeywordsAreRecognized) {
     EXPECT_EQ(t[3].type, TokenType::Keyword);
     EXPECT_EQ(t[3].text, "OR");
 }
+
+TEST(Tokenizer, AndOrAreKeywordsStoredUppercase) {
+    auto t = parseSQLquery("and OR And");
+    ASSERT_EQ(t.size(), 3u);
+    EXPECT_EQ(t[0].type, TokenType::Keyword);
+    EXPECT_EQ(t[0].text, "AND");
+    EXPECT_EQ(t[1].text, "OR");
+    EXPECT_EQ(t[2].text, "AND");
+}
+
+TEST(Tokenizer, WordsStartingWithOrOrAndAreIdentifiers) {
+    auto t = parseSQLquery("order android origin");
+    ASSERT_EQ(t.size(), 3u);
+    for (const auto& tok : t) EXPECT_EQ(tok.type, TokenType::Identifier);
+}
+
+TEST(Tokenizer, ParenthesesAreSymbols) {
+    auto t = parseSQLquery("(a=1)");
+    ASSERT_EQ(t.size(), 5u);
+    EXPECT_EQ(t[0].type, TokenType::Symbol);
+    EXPECT_EQ(t[0].text, "(");
+    EXPECT_EQ(t[4].text, ")");
+}
+
+TEST(Tokenizer, AndInsideStringIsNotKeyword) {
+    auto t = parseSQLquery("'this AND that'");
+    ASSERT_EQ(t.size(), 1u);
+    EXPECT_EQ(t[0].type, TokenType::String);
+    EXPECT_EQ(t[0].text, "this AND that");
+}

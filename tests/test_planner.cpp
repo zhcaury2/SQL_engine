@@ -231,3 +231,160 @@ TEST(Planner, HugeNumberGivesCleanError) {
     std::string sql = "SELECT * FROM users WHERE age > " + std::string(400, '9');
     EXPECT_THROW(runQuery(sql, catalog), std::runtime_error);
 }
+
+TEST(AndOrPlanner, AndKeepsRowsMatchingBoth) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT username FROM users WHERE age > 18 AND username < 'c'", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"b"}));
+}
+
+TEST(AndOrPlanner, OrKeepsRowsMatchingEither) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT username FROM users WHERE age = 18 OR age = 20", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"a", "c"}));
+}
+
+TEST(AndOrPlanner, PrecedenceAffectsResults) {
+    auto c = makeCatalog();
+    auto r1 = runQuery("SELECT username FROM users WHERE age = 18 OR age = 19 AND username = 'c'", c);
+    EXPECT_EQ(textColumn(r1, 0), (Names{"a"}));
+    auto r2 = runQuery("SELECT username FROM users WHERE (age = 18 OR age = 19) AND username = 'c'", c);
+    EXPECT_TRUE(r2.empty());
+}
+
+TEST(AndOrPlanner, AndBeforeOrWithoutParentheses) {
+    auto c = makeCatalog();
+    // (age > 18 AND age < 20) OR username = 'a'  ->  b (19) and a
+    auto rows = runQuery("SELECT username FROM users WHERE age > 18 AND age < 20 OR username = 'a'", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"a", "b"}));
+}
+
+TEST(AndOrPlanner, OrBeforeAndWithoutParentheses) {
+    auto c = makeCatalog();
+    // username = 'a' OR (age > 18 AND age < 20)  ->  same rows, different grouping
+    auto rows = runQuery("SELECT username FROM users WHERE username = 'a' OR age > 18 AND age < 20", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"a", "b"}));
+}
+
+TEST(AndOrPlanner, ParenthesesGroupTheOrFirst) {
+    auto c = makeCatalog();
+    // age > 18 AND (age < 20 OR username = 'a')  ->  only b
+    auto rows = runQuery("SELECT username FROM users WHERE age > 18 AND (age < 20 OR username = 'a')", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"b"}));
+}
+
+TEST(AndOrPlanner, TwoParenthesizedGroups) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT username FROM users "
+                         "WHERE (age = 18 OR age = 19) AND (username = 'b' OR username = 'c')", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"b"}));
+}
+
+TEST(AndOrPlanner, RedundantParenthesesDoNotChangeResults) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT username FROM users WHERE ((age = 20))", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"c"}));
+}
+
+TEST(AndOrPlanner, OrChainOverStrings) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT age FROM users "
+                         "WHERE username = 'a' OR username = 'b' OR username = 'c'", c);
+    EXPECT_EQ(rows.size(), 3u);
+}
+
+TEST(AndOrPlanner, RangeWithAnd) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT username FROM users WHERE age >= 19 AND age <= 19", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"b"}));
+}
+
+TEST(AndOrPlanner, ContradictionGivesNoRows) {
+    auto c = makeCatalog();
+    EXPECT_TRUE(runQuery("SELECT * FROM users WHERE age > 19 AND age < 19", c).empty());
+}
+
+TEST(AndOrPlanner, TautologyGivesAllRows) {
+    auto c = makeCatalog();
+    EXPECT_EQ(runQuery("SELECT * FROM users WHERE age < 100 OR username = 'zzz'", c).size(), 3u);
+}
+
+TEST(AndOrPlanner, FilteredColumnsNeedNotBeSelected) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT username FROM users WHERE age > 18 AND password != 'b2'", c);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].size(), 1u);
+    EXPECT_EQ(std::get<std::string>(rows[0][0]), "c");
+}
+
+TEST(AndOrPlanner, StarWithCompoundWhere) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT * FROM users WHERE age = 18 OR age = 20", c);
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].size(), 3u);
+}
+
+TEST(AndOrPlanner, KeywordsAndColumnsAreCaseInsensitive) {
+    auto c = makeCatalog();
+    auto rows = runQuery("select USERNAME from USERS where AGE > 18 and (USERNAME = 'b' or USERNAME = 'c')", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"b", "c"}));
+}
+
+TEST(AndOrPlanner, StringValuesStayCaseSensitive) {
+    auto c = makeCatalog();
+    EXPECT_TRUE(runQuery("SELECT * FROM users WHERE username = 'B' AND age = 19", c).empty());
+}
+
+TEST(AndOrPlanner, TrailingSemicolonWorks) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT username FROM users WHERE age = 18 OR age = 19;", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"a", "b"}));
+}
+
+TEST(AndOrPlanner, NullCellFailsComparisonInBothOperators) {
+    auto c = makeCatalog();
+    c.at("users").rows[1][2] = std::monostate{};     // b's age is NULL
+    EXPECT_EQ(textColumn(runQuery("SELECT username FROM users WHERE age > 18 OR username = 'b'", c), 0),
+              (Names{"b", "c"}));
+    EXPECT_TRUE(runQuery("SELECT username FROM users WHERE age != 18 AND username = 'b'", c).empty());
+}
+
+TEST(AndOrPlanner, TypeMismatchSideFailsButOtherSideCanMatch) {
+    auto c = makeCatalog();
+    auto rows = runQuery("SELECT username FROM users WHERE age = 'x' OR username = 'a'", c);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"a"}));
+}
+
+TEST(AndOrPlanner, UnknownColumnOnEitherSideThrows) {
+    auto c = makeCatalog();
+    EXPECT_THROW(runQuery("SELECT * FROM users WHERE agee > 1 AND age = 2", c), std::runtime_error);
+    EXPECT_THROW(runQuery("SELECT * FROM users WHERE age > 1 OR agee = 2", c), std::runtime_error);
+}
+
+TEST(AndOrPlanner, UnknownColumnInsideParenthesesThrowsBeforeAnyRows) {
+    auto c = makeCatalog();
+    EXPECT_THROW(runQuery("SELECT * FROM users WHERE age > 1 AND (agee = 2 OR age = 3)", c),
+                 std::runtime_error);
+}
+
+TEST(AndOrPlanner, UnknownColumnErrorNamesIt) {
+    auto c = makeCatalog();
+    try {
+        runQuery("SELECT * FROM users WHERE age > 1 AND (agee = 2 OR age = 3)", c);
+        FAIL() << "expected an exception";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("agee"), std::string::npos);
+    }
+}
+
+TEST(AndOrPlanner, MalformedCompoundConditionsThrow) {
+    auto c = makeCatalog();
+    for (const char* sql : {
+        "SELECT * FROM users WHERE age > 1 AND",
+        "SELECT * FROM users WHERE (age > 1",
+        "SELECT * FROM users WHERE age > 1)",
+        "SELECT * FROM users WHERE AND age > 1",
+    }) {
+        EXPECT_THROW(runQuery(sql, c), std::runtime_error) << sql;
+    }
+}
