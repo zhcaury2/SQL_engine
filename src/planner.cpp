@@ -9,16 +9,32 @@ static size_t getColumnIndex(const Table& table, const std::string& columnName) 
     return it->second;
 }
 
-// Converts the condition value to a literal.
-static Value makeLiteral(const SelectStatement& stmt) {
-    if (stmt.conditionValueType == TokenType::Number) {
+// Convert leaf to Value
+static Value makeLiteral(const Expr& leaf) {
+    if (leaf.valueType == TokenType::Number) {
         try {
-            return Value(std::stod(stmt.conditionValue));
+            return Value(std::stod(leaf.value));
         } catch (const std::logic_error&) {
-            throw std::runtime_error("Invalid numeric condition value: " + stmt.conditionValue);
+            throw std::runtime_error("Invalid numeric condition value: " + leaf.value);
         }
     }
-    return Value(stmt.conditionValue);
+    return Value(leaf.value);
+}
+
+static std::unique_ptr<Predicate> buildPredicate(const Expr& expr, const Table& table) {
+    switch (expr.kind) {
+        case Expr::Kind::Comparison:
+            return makeCompare(getColumnIndex(table, expr.column),
+                               expr.op,
+                               makeLiteral(expr));
+        case Expr::Kind::And:
+            return makeAnd(buildPredicate(*expr.left, table),
+                           buildPredicate(*expr.right, table));
+        case Expr::Kind::Or:
+            return makeOr(buildPredicate(*expr.left, table),
+                          buildPredicate(*expr.right, table));
+    }
+    throw std::runtime_error("Invalid predicate expression");
 }
 
 // Links Scan -> Filter -> Project into a plan.
@@ -30,11 +46,9 @@ std::unique_ptr<Operator> buildPlan(const SelectStatement& stmt, const std::map<
     const Table& table = tableIt->second;
     
     std::unique_ptr<Operator> plan = std::make_unique<Scan>(table);
-    if (stmt.hasCondition) {
-        size_t conditionColumnIndex = getColumnIndex(table, stmt.conditionColumn);
-
-        Value conditionVal = makeLiteral(stmt);
-        plan = std::make_unique<Filter>(std::move(plan), conditionColumnIndex, stmt.conditionSymbol, conditionVal);
+    if (stmt.where) {
+        auto predicate = buildPredicate(*stmt.where, table);
+        plan = std::make_unique<Filter>(std::move(plan), std::move(predicate));
     }
     std::vector<size_t> projectionIndices;
 

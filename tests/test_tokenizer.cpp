@@ -77,3 +77,12 @@ TEST(Tokenizer, TwoDotsInNumberThrows) {
 TEST(Tokenizer, TrailingSecondDotThrows) {
     EXPECT_THROW(parseSQLquery("x > 1.5."), std::runtime_error);
 }
+
+TEST(Tokenizer, AndOrKeywordsAreRecognized) {
+    auto t = parseSQLquery("a AND b OR c");
+    ASSERT_EQ(t.size(), 5u);
+    EXPECT_EQ(t[1].type, TokenType::Keyword);
+    EXPECT_EQ(t[1].text, "AND");
+    EXPECT_EQ(t[3].type, TokenType::Keyword);
+    EXPECT_EQ(t[3].text, "OR");
+}

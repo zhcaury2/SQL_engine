@@ -1,4 +1,25 @@
 #include "operators.h"
+#include "parse.h"
+
+static std::unique_ptr<Predicate> makeBinary(Predicate::Kind kind,
+                                             std::unique_ptr<Predicate> left,
+                                             std::unique_ptr<Predicate> right) {
+    if (!left || !right) throw std::runtime_error("Missing predicate operand");
+    auto predicate = std::make_unique<Predicate>();
+    predicate->kind = kind;
+    predicate->left = std::move(left);
+    predicate->right = std::move(right);
+    return predicate;
+}
+
+
+std::unique_ptr<Predicate> makeAnd(std::unique_ptr<Predicate> left, std::unique_ptr<Predicate> right) {
+    return makeBinary(Predicate::Kind::And, std::move(left), std::move(right));
+}
+
+std::unique_ptr<Predicate> makeOr(std::unique_ptr<Predicate> left, std::unique_ptr<Predicate> right) {
+    return makeBinary(Predicate::Kind::Or, std::move(left), std::move(right));
+}
 
 bool Scan::next(Row& out) {
     if (currentRow >= table.rows.size()) return false;
@@ -6,17 +27,14 @@ bool Scan::next(Row& out) {
     return true;
 }
 
-Filter::Filter(std::unique_ptr<Operator> c, size_t colIdx, std::string o, Value lit)
-    : child(std::move(c)), targetColumn(colIdx), op(std::move(o)), literal(std::move(lit)) {
-        if (this->op != "=" && this->op != "!=" && this->op != "<" && this->op != "<=" &&
-            this->op != ">" && this->op != ">=") {
-            throw std::runtime_error("Unknown operator: " + this->op);
-        }
-}
+Filter::Filter(std::unique_ptr<Operator> c, std::unique_ptr<Predicate> p)
+    : child(std::move(c)), predicate(std::move(p)) {
+        if (!predicate) throw std::runtime_error("Missing predicate");
+    }
 
 bool Filter::next(Row& out) {
     while (child->next(out)) {
-        if (matches(out[targetColumn])) return true;
+        if (evaluate(*predicate, out)) return true;
     }
     return false;
 }
@@ -27,24 +45,24 @@ static int compareNumbers(double a, double b) {
     return 0;
 }
 
-static bool applyOperator(const std::string& op, int c) {
-    if (op == "=") return c == 0;
-    if (op == "!=") return c != 0;
-    if (op == "<") return c < 0;
-    if (op == "<=") return c <= 0;
-    if (op == ">") return c > 0;
-    if (op == ">=") return c >= 0;
+static CmpOp parseOperator(const std::string& op) {
+    if (op == "=") return CmpOp::Eq;
+    if (op == "!=") return CmpOp::Ne;
+    if (op == "<") return CmpOp::Lt;
+    if (op == "<=") return CmpOp::Le;
+    if (op == ">") return CmpOp::Gt;
+    if (op == ">=") return CmpOp::Ge;
     throw std::runtime_error("Unknown operator: " + op);
 }
 
-bool Filter::matches(const Value& cell) const {
-    if (std::holds_alternative<double>(cell) && std::holds_alternative<double>(literal)) {
-        return applyOperator(op, compareNumbers(std::get<double>(cell), std::get<double>(literal)));
-    }
-    if (std::holds_alternative<std::string>(cell) && std::holds_alternative<std::string>(literal)) {
-        const auto& a = std::get<std::string>(cell);
-        const auto& b = std::get<std::string>(literal);
-        return applyOperator(op, a.compare(b));
+static bool applyOperator(CmpOp op, int c) {
+    switch (op) {
+        case CmpOp::Eq: return c == 0;
+        case CmpOp::Ne: return c != 0;
+        case CmpOp::Lt: return c < 0;
+        case CmpOp::Le: return c <= 0;
+        case CmpOp::Gt: return c > 0;
+        case CmpOp::Ge: return c >= 0;
     }
     return false;
 }
@@ -61,3 +79,36 @@ bool Project::next(Row& out) {
     return true;
 }
 
+
+static bool compareCell(const Predicate& predicate, const Value& cell) {
+    if (std::holds_alternative<double>(cell) && std::holds_alternative<double>(predicate.literal)) {
+        return applyOperator(predicate.op, compareNumbers(std::get<double>(cell), std::get<double>(predicate.literal)));
+    }
+    if (std::holds_alternative<std::string>(cell) && std::holds_alternative<std::string>(predicate.literal)) {
+        const auto& a = std::get<std::string>(cell);
+        const auto& b = std::get<std::string>(predicate.literal);
+        return applyOperator(predicate.op, a.compare(b));
+    }
+    return false;
+}
+
+bool evaluate(const Predicate& predicate, const Row& row) {
+    switch (predicate.kind) {
+        case Predicate::Kind::Compare:
+            return compareCell(predicate, row[predicate.column]);
+        case Predicate::Kind::And:
+            return evaluate(*predicate.left, row) && evaluate(*predicate.right, row);
+        case Predicate::Kind::Or:
+            return evaluate(*predicate.left, row) || evaluate(*predicate.right, row);
+    }
+    return false;
+}
+
+std::unique_ptr<Predicate> makeCompare(size_t column, const std::string& op, Value literal) {
+    auto predicate = std::make_unique<Predicate>();
+    predicate->kind = Predicate::Kind::Compare;
+    predicate->column = column;
+    predicate->op = parseOperator(op);
+    predicate->literal = std::move(literal);
+    return predicate;
+}

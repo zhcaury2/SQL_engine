@@ -3,11 +3,29 @@
 using std::vector;
 using std::string;
 
+bool Parser::peekIsKeyword(const string& keyword) const {
+    return peek().type == TokenType::Keyword && peek().text == keyword;
+}
+
+bool Parser::peekIsSymbol(const string& symbol) const {
+    return peek().type == TokenType::Symbol && peek().text == symbol;
+}
+
+//Turns flat expressions into binary expression tree.
+static std::unique_ptr<Expr> makeBinary(Expr::Kind kind, std::unique_ptr<Expr> left, std::unique_ptr<Expr> right) {
+    auto expr = std::make_unique<Expr>();
+    expr->kind = kind;
+    expr->left = std::move(left);
+    expr->right = std::move(right);
+    return expr;
+}
+
 static std::string describe(const Token& token) {
     if (token.type == TokenType::End) return "end of input";
     return "'" + token.text + "'";
 }
 
+// Returns a human-readable name for a token type.
 static std::string typeName(TokenType t){
     switch (t) {
         case TokenType::Identifier: return "identifier";
@@ -23,6 +41,7 @@ Parser::Parser(const vector<Token>& tokens){
     this->tokens = tokens;
     this->pos = 0;
 }
+
 
 Token Parser::peek() const {
     if (pos >= tokens.size()) {
@@ -65,30 +84,63 @@ void Parser::parseSelectTable(SelectStatement& stmt) {
     stmt.table = expect(TokenType::Identifier, "").text;
 }
 
-void Parser::parseWhere(SelectStatement& stmt) {
-    expect(TokenType::Keyword, "WHERE");
-    stmt.hasCondition = true;
-    stmt.conditionColumn = expect(TokenType::Identifier, "").text;
+std::unique_ptr<Expr> Parser::parseCondition(){
+    auto left = parseAnd();
+    while (peekIsKeyword("OR")) {
+        advance();
+        left = makeBinary(Expr::Kind::Or, std::move(left), parseAnd());
+    }
+    return left;
+}
+
+std::unique_ptr<Expr> Parser::parseComparison(){
+    auto node = std::make_unique<Expr>();
+    node->kind = Expr::Kind::Comparison;
+    node->column = expect(TokenType::Identifier, "").text;
 
     Token symbol = expect(TokenType::Symbol, "");
     if (symbol.text != ">" && symbol.text != "<" && symbol.text != "=" && symbol.text != "<=" && symbol.text != ">=" && symbol.text != "!=") {
-        throw std::runtime_error("Invalid condition symbol: " + describe(symbol));
+        throw std::runtime_error("Expected comparison operator, got: " + describe(symbol));
     }
-    stmt.conditionSymbol = symbol.text;
+
+    node->op = symbol.text;
+
     Token value = advance();
     if (value.type != TokenType::Number && value.type != TokenType::String) {
         throw std::runtime_error("Expected number or string, got: " + describe(value));
     }
-    stmt.conditionValue = value.text;
-    stmt.conditionValueType = value.type;
+    node->value = value.text;
+    node->valueType = value.type;
+    return node;
+}
+
+std::unique_ptr<Expr> Parser::parseAnd(){
+    auto left = parsePrimary();
+    while (peekIsKeyword("AND")) {
+        advance();
+        auto right = parsePrimary();
+        left = makeBinary(Expr::Kind::And, std::move(left), std::move(right));
+    }
+    return left;
+}
+
+std::unique_ptr<Expr> Parser::parsePrimary(){
+    if (peekIsSymbol("(")){
+        advance();
+        auto expr = parseCondition();
+        expect(TokenType::Symbol, ")");
+        return expr;
+    }
+    return parseComparison();
 }
 
 SelectStatement Parser::parseSelect() {
     SelectStatement stmt;
     parseSelectColumns(stmt);
     parseSelectTable(stmt);
-    if (peek().text == "WHERE" && peek().type == TokenType::Keyword) {
-        parseWhere(stmt);
+    if (peekIsKeyword("WHERE")) {
+        advance();
+        stmt.where = parseCondition();
     }
     if (peek().type == TokenType::Symbol && peek().text == ";") {
         advance();

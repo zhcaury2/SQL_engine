@@ -3,6 +3,34 @@
 #include <memory>
 #include "load_file.h"
 
+enum class CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge
+};
+
+struct Predicate {
+    enum class Kind { Compare, And, Or};
+    Kind kind;
+
+    size_t column = 0;
+    CmpOp op = CmpOp::Eq;
+    Value literal;
+
+    std::unique_ptr<Predicate> left, right;
+};
+
+// Translate flat predicates into tree.
+std::unique_ptr<Predicate> makeCompare(size_t column, const std::string& op, Value literal);
+std::unique_ptr<Predicate> makeAnd(std::unique_ptr<Predicate> left, std::unique_ptr<Predicate> right);
+std::unique_ptr<Predicate> makeOr(std::unique_ptr<Predicate> left, std::unique_ptr<Predicate> right);
+
+// Executes predicate against row.
+bool evaluate(const Predicate& predicate, const Row& row);
+
 class Operator {
 public:
     virtual ~Operator() = default;
@@ -22,14 +50,10 @@ public:
 
 class Filter : public Operator {
     std::unique_ptr<Operator> child;
-    size_t targetColumn;
-    std::string op;
-    Value literal;
+    std::unique_ptr<Predicate> predicate;
 
-    // true if cell passes WHERE clause.
-    bool matches(const Value& cell) const;
 public:
-    Filter(std::unique_ptr<Operator> child, size_t colIdx, std::string op, Value literal);
+    Filter(std::unique_ptr<Operator> child, std::unique_ptr<Predicate> predicate);
     // Returns next matching row.
     bool next(Row& out) override;
 };
