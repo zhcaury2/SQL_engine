@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "tokenize.h"
 #include "parse.h"
+#include <stdexcept>
 
 TEST(Tokenizer, EmptyInput) {
     EXPECT_TRUE(parseSQLquery("").empty());
@@ -60,4 +61,19 @@ TEST(Tokenizer, NotEqual) {
     auto t = parseSQLquery("age!=21");
     ASSERT_EQ(t.size(), 3u);
     EXPECT_EQ(t[1].text, "!=");
+}
+
+TEST(Tokenizer, DecimalIsOneNumberToken) {
+    auto t = parseSQLquery("price <= 9.99");
+    ASSERT_EQ(t.size(), 3u);
+    EXPECT_EQ(t[2].type, TokenType::Number);
+    EXPECT_EQ(t[2].text, "9.99");
+}
+
+TEST(Tokenizer, TwoDotsInNumberThrows) {
+    EXPECT_THROW(parseSQLquery("1.2.3"), std::runtime_error);
+}
+
+TEST(Tokenizer, TrailingSecondDotThrows) {
+    EXPECT_THROW(parseSQLquery("x > 1.5."), std::runtime_error);
 }

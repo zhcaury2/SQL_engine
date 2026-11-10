@@ -108,3 +108,27 @@ TEST(Parser, NegativeOrBadValue){
     Parser parser(t);
     EXPECT_THROW(parser.parseSelect(), std::runtime_error);
 }
+
+static std::string errorFor(const std::string& sql) {
+    try {
+        Parser p(parseSQLquery(sql));
+        p.parseSelect();
+    } catch (const std::runtime_error& e) {
+        return e.what();
+    }
+    return "";
+}
+
+TEST(ParseErrors, MissingColumnNamesTheProblem) {
+    std::string msg = errorFor("SELECT FROM users");
+    EXPECT_NE(msg.find("identifier"), std::string::npos);
+    EXPECT_NE(msg.find("FROM"), std::string::npos);
+}
+
+TEST(ParseErrors, EndOfInputIsNamed) {
+    EXPECT_NE(errorFor("SELECT name").find("end of input"), std::string::npos);
+}
+
+TEST(ParseErrors, ExpectedTextIsNeverBlank) {
+    EXPECT_EQ(errorFor("SELECT FROM users").find("token: ,"), std::string::npos);
+}

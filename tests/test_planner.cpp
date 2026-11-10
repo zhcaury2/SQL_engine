@@ -41,6 +41,17 @@ static std::vector<std::string> textColumn(const std::vector<Row>& rows, size_t 
     return out;
 }
 
+static std::map<std::string, Table> makeCapitalizedCatalog() {
+    Table t;
+    t.name = "people";
+    t.columns = {"Username", "Age"};
+    t.colIndex = {{"username", 0}, {"age", 1}};
+    t.rows = {{std::string("a"), 18.0}, {std::string("b"), 19.0}};
+    std::map<std::string, Table> c;
+    c.emplace("people", std::move(t));
+    return c;
+}
+
 using Names = std::vector<std::string>;
 
 TEST(Planner, SelectStarReturnsAllRowsAndColumns) {
@@ -192,4 +203,31 @@ TEST(Planner, TwoPlansOverSameTableAreIndependent) {
     ASSERT_TRUE(p1->next(r1));       // p1 advanced twice
     ASSERT_TRUE(p2->next(r2));       // p2 is still at the start
     EXPECT_EQ(std::get<std::string>(r2[0]), "a");
+}
+
+TEST(Planner, SelectStarWorksWithCapitalizedHeaders) {
+    auto catalog = makeCapitalizedCatalog();
+    auto rows = runQuery("SELECT * FROM people", catalog);
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].size(), 2u);
+    EXPECT_EQ(std::get<std::string>(rows[0][0]), "a");
+}
+
+TEST(Planner, ColumnNamesAreCaseInsensitive) {
+    auto catalog = makeCatalog();
+    auto rows = runQuery("SELECT USERNAME FROM USERS WHERE AGE > 18", catalog);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"b", "c"}));
+}
+
+TEST(Planner, DecimalLiteralInWhere) {
+    auto catalog = makeCatalog();
+    catalog.at("users").rows[1][2] = 19.5;
+    auto rows = runQuery("SELECT username FROM users WHERE age > 19.2", catalog);
+    EXPECT_EQ(textColumn(rows, 0), (Names{"b", "c"}));
+}
+
+TEST(Planner, HugeNumberGivesCleanError) {
+    auto catalog = makeCatalog();
+    std::string sql = "SELECT * FROM users WHERE age > " + std::string(400, '9');
+    EXPECT_THROW(runQuery(sql, catalog), std::runtime_error);
 }

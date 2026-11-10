@@ -5,15 +5,13 @@ project(SQL_engine CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# All real code goes in this library
 add_library(sql_core src/tokenize.cpp src/parse.cpp src/load_file.cpp src/operators.cpp src/planner.cpp src/printer.cpp src/helpers.cpp)
 target_include_directories(sql_core PUBLIC headers)
 
-# The program itself
+
 add_executable(sql_engine src/main.cpp)
 target_link_libraries(sql_engine sql_core)
 
-# GoogleTest (downloaded automatically)
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -21,9 +19,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-# Tests
 enable_testing()
 add_executable(unit_tests tests/test_tokenizer.cpp tests/test_parser.cpp tests/test_load_file.cpp tests/test_operators.cpp tests/test_planner.cpp)
 target_link_libraries(unit_tests sql_core GTest::gtest_main)
 include(GoogleTest)
-gtest_discover_tests(unit_test)
+gtest_discover_tests(unit_tests)

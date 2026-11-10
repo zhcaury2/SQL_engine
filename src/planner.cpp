@@ -12,7 +12,11 @@ static size_t getColumnIndex(const Table& table, const std::string& columnName) 
 // Converts the condition value to a literal.
 static Value makeLiteral(const SelectStatement& stmt) {
     if (stmt.conditionValueType == TokenType::Number) {
-        return Value(std::stod(stmt.conditionValue));
+        try {
+            return Value(std::stod(stmt.conditionValue));
+        } catch (const std::logic_error&) {
+            throw std::runtime_error("Invalid numeric condition value: " + stmt.conditionValue);
+        }
     }
     return Value(stmt.conditionValue);
 }

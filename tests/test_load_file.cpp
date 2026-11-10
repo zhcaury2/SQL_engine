@@ -17,16 +17,6 @@ struct TempCsv {
     std::string str() const { return path.string(); }
 };
 
-TEST(Loader, UsersGeneralTest){
-    Table table = loadCsv("data/users.csv", "test");
-    EXPECT_TRUE(std::holds_alternative<std::string>(table.rows[0][0]));
-    EXPECT_TRUE(std::holds_alternative<std::string>(table.rows[1][0]));
-    EXPECT_TRUE(std::holds_alternative<std::string>(table.rows[2][0]));
-    EXPECT_EQ(table.name, "test");
-    EXPECT_EQ(table.rows.size(), 3);
-    EXPECT_EQ(table.columns.size(), 3);
-}
-
 TEST(Loader, HeaderBecomesColumnsAndIndex) {
     TempCsv f("username,password,age\na,a2,18\n");
     Table t = loadCsv(f.str(), "users");
@@ -143,4 +133,36 @@ TEST(Loader, TooFewFieldsThrows) {
 TEST(Loader, TooManyFieldsThrows) {
     TempCsv f("a,b\n1,2,3\n");
     EXPECT_THROW(loadCsv(f.str(), "t"), std::runtime_error);
+}
+
+TEST(Loader, UsersGeneralTest) {
+    TempCsv f("username,password,age\na,a2,18\nb,b2,19\nc,c2,20\n");
+    Table table = loadCsv(f.str(), "test");
+    EXPECT_TRUE(std::holds_alternative<std::string>(table.rows[0][0]));
+    EXPECT_TRUE(std::holds_alternative<double>(table.rows[0][2]));
+    EXPECT_EQ(table.name, "test");
+    EXPECT_EQ(table.rows.size(), 3u);
+    EXPECT_EQ(table.columns.size(), 3u);
+}
+
+TEST(Loader, Utf8BomIsStrippedFromHeader) {
+    TempCsv f("\xEF\xBB\xBF" "name,age\nz,5\n");
+    Table t = loadCsv(f.str(), "t");
+    EXPECT_EQ(t.columns[0], "name");
+    EXPECT_EQ(t.colIndex.at("name"), 0u);
+}
+
+TEST(Loader, CapitalizedHeaderKeepsDisplayNameButIndexesLowercase) {
+    TempCsv f("Username,AGE\na,18\n");
+    Table t = loadCsv(f.str(), "t");
+    EXPECT_EQ(t.columns[0], "Username");
+    EXPECT_EQ(t.colIndex.at("username"), 0u);
+    EXPECT_EQ(t.colIndex.at("age"), 1u);
+    EXPECT_EQ(t.colIndex.count("Username"), 0u);
+}
+
+TEST(Loader, DecimalColumnIsNumeric) {
+    TempCsv f("price\n9.99\n12.5\n");
+    Table t = loadCsv(f.str(), "t");
+    EXPECT_DOUBLE_EQ(std::get<double>(t.rows[0][0]), 9.99);
 }
