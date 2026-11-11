@@ -388,3 +388,169 @@ TEST(AndOrPlanner, MalformedCompoundConditionsThrow) {
         EXPECT_THROW(runQuery(sql, c), std::runtime_error) << sql;
     }
 }
+
+// Columns: title, year, price. Table order is deliberately NOT sorted by anything.
+static std::map<std::string, Table> makeFilmCatalog() {
+    Table t;
+    t.name = "films";
+    t.columns = {"title", "year", "price"};
+    for (size_t i = 0; i < t.columns.size(); ++i) t.colIndex[t.columns[i]] = i;
+    t.rows = {
+        {std::string("Alien"), 1979.0, 9.99},
+        {std::string("Heat"),  1995.0, 8.5},
+        {std::string("Up"),    2009.0, 8.5},
+        {std::string("Cars"),  2006.0, 7.0},
+        {std::string("Coco"),  2017.0, 10.0},
+    };
+    std::map<std::string, Table> c;
+    c.emplace("films", std::move(t));
+    return c;
+}
+
+static Names titles(const std::string& sql, const std::map<std::string, Table>& c) {
+    return textColumn(runQuery(sql, c), 0);
+}
+
+TEST(OrderLimitPlanner, OrderByAscendingIsTheDefault) {
+    auto c = makeFilmCatalog();
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY year", c),
+              (Names{"Alien", "Heat", "Cars", "Up", "Coco"}));
+}
+
+TEST(OrderLimitPlanner, OrderByDescending) {
+    auto c = makeFilmCatalog();
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY year DESC", c),
+              (Names{"Coco", "Up", "Cars", "Heat", "Alien"}));
+}
+
+TEST(OrderLimitPlanner, OrderByTextColumn) {
+    auto c = makeFilmCatalog();
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY title", c),
+              (Names{"Alien", "Cars", "Coco", "Heat", "Up"}));
+}
+
+TEST(OrderLimitPlanner, TiesKeepTableOrder) {
+    auto c = makeFilmCatalog();
+    // Heat and Up both cost 8.5; Heat comes first in the table
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY price", c),
+              (Names{"Cars", "Heat", "Up", "Alien", "Coco"}));
+}
+
+TEST(OrderLimitPlanner, SecondKeyBreaksTies) {
+    auto c = makeFilmCatalog();
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY price, title DESC", c),
+              (Names{"Cars", "Up", "Heat", "Alien", "Coco"}));
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY price DESC, title DESC", c),
+              (Names{"Coco", "Alien", "Up", "Heat", "Cars"}));
+}
+
+TEST(OrderLimitPlanner, OrderByColumnThatIsNotSelected) {
+    auto c = makeFilmCatalog();
+    auto rows = runQuery("SELECT title FROM films ORDER BY year DESC", c);
+    ASSERT_EQ(rows.size(), 5u);
+    EXPECT_EQ(rows[0].size(), 1u);            // only title comes back
+    EXPECT_EQ(textColumn(rows, 0), (Names{"Coco", "Up", "Cars", "Heat", "Alien"}));
+}
+
+TEST(OrderLimitPlanner, OrderByWithStar) {
+    auto c = makeFilmCatalog();
+    auto rows = runQuery("SELECT * FROM films ORDER BY year DESC LIMIT 1", c);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].size(), 3u);
+    EXPECT_EQ(std::get<std::string>(rows[0][0]), "Coco");
+}
+
+TEST(OrderLimitPlanner, WhereThenOrderBy) {
+    auto c = makeFilmCatalog();
+    EXPECT_EQ(titles("SELECT title FROM films WHERE year > 2000 ORDER BY year", c),
+              (Names{"Cars", "Up", "Coco"}));
+}
+
+TEST(OrderLimitPlanner, CompoundWhereOrderByAndLimit) {
+    auto c = makeFilmCatalog();
+    // price >= 8.5 AND year < 2010 -> Alien, Heat, Up; ordered by year; first two
+    EXPECT_EQ(titles("SELECT title FROM films WHERE price >= 8.5 AND year < 2010 ORDER BY year LIMIT 2", c),
+              (Names{"Alien", "Heat"}));
+}
+
+TEST(OrderLimitPlanner, LimitWithoutOrderByTakesTableOrder) {
+    auto c = makeFilmCatalog();
+    EXPECT_EQ(titles("SELECT title FROM films LIMIT 2", c), (Names{"Alien", "Heat"}));
+}
+
+TEST(OrderLimitPlanner, LimitAppliesAfterSorting) {
+    auto c = makeFilmCatalog();
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY year DESC LIMIT 2", c),
+              (Names{"Coco", "Up"}));
+}
+
+TEST(OrderLimitPlanner, LimitAppliesAfterFiltering) {
+    auto c = makeFilmCatalog();
+    // table order after the filter is Up, Cars, Coco; LIMIT keeps the first two
+    EXPECT_EQ(titles("SELECT title FROM films WHERE year > 2000 LIMIT 2", c),
+              (Names{"Up", "Cars"}));
+}
+
+TEST(OrderLimitPlanner, LimitZeroAndLimitLargerThanTable) {
+    auto c = makeFilmCatalog();
+    EXPECT_TRUE(runQuery("SELECT * FROM films LIMIT 0", c).empty());
+    EXPECT_EQ(runQuery("SELECT * FROM films LIMIT 100", c).size(), 5u);
+}
+
+TEST(OrderLimitPlanner, EmptyResultWithOrderByAndLimit) {
+    auto c = makeFilmCatalog();
+    EXPECT_TRUE(runQuery("SELECT * FROM films WHERE year > 3000 ORDER BY year LIMIT 5", c).empty());
+}
+
+TEST(OrderLimitPlanner, KeywordsAndNamesAreCaseInsensitive) {
+    auto c = makeFilmCatalog();
+    EXPECT_EQ(titles("select TITLE from FILMS order by YEAR desc limit 1", c), (Names{"Coco"}));
+}
+
+TEST(OrderLimitPlanner, TrailingSemicolon) {
+    auto c = makeFilmCatalog();
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY year LIMIT 1;", c), (Names{"Alien"}));
+}
+
+TEST(OrderLimitPlanner, NullPriceSortsFirstAscendingAndLastDescending) {
+    auto c = makeFilmCatalog();
+    c.at("films").rows[0][2] = std::monostate{};      // Alien has no price
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY price", c),
+              (Names{"Alien", "Cars", "Heat", "Up", "Coco"}));
+    EXPECT_EQ(titles("SELECT title FROM films ORDER BY price DESC", c),
+              (Names{"Coco", "Heat", "Up", "Cars", "Alien"}));
+}
+
+TEST(OrderLimitPlanner, QueryDoesNotReorderTheStoredTable) {
+    auto c = makeFilmCatalog();
+    runQuery("SELECT * FROM films ORDER BY year DESC", c);
+    EXPECT_EQ(titles("SELECT title FROM films", c),
+              (Names{"Alien", "Heat", "Up", "Cars", "Coco"}));
+}
+
+TEST(OrderLimitPlanner, UnknownOrderByColumnThrows) {
+    auto c = makeFilmCatalog();
+    EXPECT_THROW(runQuery("SELECT title FROM films ORDER BY nope", c), std::runtime_error);
+    EXPECT_THROW(runQuery("SELECT title FROM films ORDER BY year, nope DESC", c), std::runtime_error);
+}
+
+TEST(OrderLimitPlanner, UnknownOrderByColumnErrorNamesIt) {
+    auto c = makeFilmCatalog();
+    try {
+        runQuery("SELECT title FROM films ORDER BY nope", c);
+        FAIL() << "expected an exception";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("nope"), std::string::npos);
+    }
+}
+
+TEST(OrderLimitPlanner, MalformedClausesThrowEndToEnd) {
+    auto c = makeFilmCatalog();
+    for (const char* sql : {
+        "SELECT * FROM films ORDER year",
+        "SELECT * FROM films LIMIT -1",
+        "SELECT * FROM films LIMIT 5 ORDER BY year",
+    }) {
+        EXPECT_THROW(runQuery(sql, c), std::runtime_error) << sql;
+    }
+}

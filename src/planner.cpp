@@ -37,7 +37,7 @@ static std::unique_ptr<Predicate> buildPredicate(const Expr& expr, const Table& 
     throw std::runtime_error("Invalid predicate expression");
 }
 
-// Links Scan -> Filter -> Project into a plan.
+// Links Scan -> Filter -> Sort -> Project -> Limit into a plan.
 std::unique_ptr<Operator> buildPlan(const SelectStatement& stmt, const std::map<std::string, Table>& catalog) {
     auto tableIt = catalog.find(stmt.table);
     if (tableIt == catalog.end()) {
@@ -50,6 +50,14 @@ std::unique_ptr<Operator> buildPlan(const SelectStatement& stmt, const std::map<
         auto predicate = buildPredicate(*stmt.where, table);
         plan = std::make_unique<Filter>(std::move(plan), std::move(predicate));
     }
+    if (!stmt.orderBy.empty()) {
+        std::vector<SortKey> sortKeys;
+        for (const auto& key : stmt.orderBy) {
+            sortKeys.push_back({getColumnIndex(table, key.column), key.descending});
+        }
+        plan = std::make_unique<Sort>(std::move(plan), std::move(sortKeys));
+    }
+
     std::vector<size_t> projectionIndices;
 
     if (stmt.columns.size() == 1 && stmt.columns[0] == "*") {
@@ -62,5 +70,10 @@ std::unique_ptr<Operator> buildPlan(const SelectStatement& stmt, const std::map<
         }
     }
     plan = std::make_unique<Project>(std::move(plan), projectionIndices);
+
+    if (stmt.limit.has_value()) {
+        plan = std::make_unique<Limit>(std::move(plan), *stmt.limit);
+    }
+
     return plan;
 }

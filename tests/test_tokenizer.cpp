@@ -97,9 +97,9 @@ TEST(Tokenizer, AndOrAreKeywordsStoredUppercase) {
 }
 
 TEST(Tokenizer, WordsStartingWithOrOrAndAreIdentifiers) {
-    auto t = parseSQLquery("order android origin");
-    ASSERT_EQ(t.size(), 3u);
-    for (const auto& tok : t) EXPECT_EQ(tok.type, TokenType::Identifier);
+    auto t = parseSQLquery("orders android origin ordering");
+    ASSERT_EQ(t.size(), 4u);
+    for (const auto& tok : t) EXPECT_EQ(tok.type, TokenType::Identifier) << tok.text;
 }
 
 TEST(Tokenizer, ParenthesesAreSymbols) {
@@ -115,4 +115,34 @@ TEST(Tokenizer, AndInsideStringIsNotKeyword) {
     ASSERT_EQ(t.size(), 1u);
     EXPECT_EQ(t[0].type, TokenType::String);
     EXPECT_EQ(t[0].text, "this AND that");
+}
+
+TEST(Tokenizer, NewKeywordsAreStoredUppercase) {
+    auto t = parseSQLquery("order BY asc Desc limit");
+    ASSERT_EQ(t.size(), 5u);
+    const char* expected[] = {"ORDER", "BY", "ASC", "DESC", "LIMIT"};
+    for (size_t i = 0; i < 5; ++i) {
+        EXPECT_EQ(t[i].type, TokenType::Keyword) << i;
+        EXPECT_EQ(t[i].text, expected[i]) << i;
+    }
+}
+
+TEST(Tokenizer, WordsContainingKeywordsAreIdentifiers) {
+    auto t = parseSQLquery("orders limiter description ascii byte border");
+    ASSERT_EQ(t.size(), 6u);
+    for (const auto& tok : t) EXPECT_EQ(tok.type, TokenType::Identifier) << tok.text;
+}
+
+TEST(Tokenizer, KeywordInsideStringStaysAString) {
+    auto t = parseSQLquery("'order by x limit 5'");
+    ASSERT_EQ(t.size(), 1u);
+    EXPECT_EQ(t[0].type, TokenType::String);
+}
+
+TEST(Tokenizer, CommaAfterDescIsSeparateToken) {
+    auto t = parseSQLquery("desc,a");
+    ASSERT_EQ(t.size(), 3u);
+    EXPECT_EQ(t[0].text, "DESC");
+    EXPECT_EQ(t[1].text, ",");
+    EXPECT_EQ(t[2].text, "a");
 }

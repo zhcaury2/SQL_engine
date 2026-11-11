@@ -23,6 +23,11 @@ struct Predicate {
     std::unique_ptr<Predicate> left, right;
 };
 
+struct SortKey {
+    size_t column;
+    bool descending = false;
+};
+
 // Translate flat predicates into tree.
 std::unique_ptr<Predicate> makeCompare(size_t column, const std::string& op, Value literal);
 std::unique_ptr<Predicate> makeAnd(std::unique_ptr<Predicate> left, std::unique_ptr<Predicate> right);
@@ -65,5 +70,27 @@ class Project : public Operator {
 public:
     Project(std::unique_ptr<Operator> child, std::vector<size_t> columns);
     // Returns next row with only projected columns.
+    bool next(Row& out) override;
+};
+
+class Sort : public Operator {
+    std::unique_ptr<Operator> child;
+    std::vector<SortKey> orderBy;
+    std::vector<Row> rows;
+    size_t currentRow = 0;
+    bool loaded = false;
+public:
+    Sort(std::unique_ptr<Operator> child, std::vector<SortKey> orderBy);
+    // Returns next row in sorted order.
+    bool next(Row& out) override;
+};
+
+class Limit : public Operator {
+    std::unique_ptr<Operator> child;
+    size_t count;
+    size_t returned = 0;
+public:
+    Limit(std::unique_ptr<Operator> child, size_t count);
+    // Returns next row up to the limit.
     bool next(Row& out) override;
 };

@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <optional>
 #include "tokenize.h"
 
 struct Expr {
@@ -17,10 +18,17 @@ struct Expr {
     std::unique_ptr<Expr> right;
 };
 
+struct OrderKey {
+    std::string column;
+    bool descending = false;
+};
+
 struct SelectStatement {
     std::vector<std::string> columns;
     std::string table;
     std::unique_ptr<Expr> where;
+    std::vector<OrderKey> orderBy;
+    std::optional<size_t> limit;
 };
 
 class Parser {
@@ -38,6 +46,9 @@ private:
     std::unique_ptr<Expr> parsePrimary();
     bool peekIsKeyword(const std::string& keyword) const;
     bool peekIsSymbol(const std::string& symbol) const;
+
+    void parseLimit(SelectStatement& stmt);
+    void parseOrderBy(SelectStatement& stmt);
     
 public:
     Parser(const std::vector<Token>& tokens);

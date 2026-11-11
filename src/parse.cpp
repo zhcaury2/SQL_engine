@@ -114,6 +114,40 @@ std::unique_ptr<Expr> Parser::parseComparison(){
     return node;
 }
 
+void Parser::parseLimit(SelectStatement& stmt) {
+    expect(TokenType::Keyword, "LIMIT");
+    Token n = expect(TokenType::Number, "");
+    if (n.text.find_first_not_of("0123456789") != std::string::npos) {
+        throw std::runtime_error("LIMIT must be a non-negative integer, got: " + describe(n));
+    }
+    try {
+        stmt.limit = std::stoull(n.text);
+    } catch (const std::out_of_range&) {
+        throw std::runtime_error("LIMIT value out of range: " + n.text);
+    }
+}
+
+void Parser::parseOrderBy(SelectStatement& stmt) {
+    expect(TokenType::Keyword, "ORDER");
+    expect(TokenType::Keyword, "BY");
+    while (true){
+        OrderKey key;
+        key.column = expect(TokenType::Identifier, "").text;
+        if (peekIsKeyword("ASC")) {
+            advance();
+        }
+        else if (peekIsKeyword("DESC")) {
+            key.descending = true;
+            advance();
+        }
+        stmt.orderBy.push_back(key);
+        if (peek().type != TokenType::Symbol || peek().text != ",") {
+            break;
+        }
+        advance();
+    }
+}
+
 std::unique_ptr<Expr> Parser::parseAnd(){
     auto left = parsePrimary();
     while (peekIsKeyword("AND")) {
@@ -141,6 +175,12 @@ SelectStatement Parser::parseSelect() {
     if (peekIsKeyword("WHERE")) {
         advance();
         stmt.where = parseCondition();
+    }
+    if (peekIsKeyword("ORDER")) {
+        parseOrderBy(stmt);
+    }
+    if (peekIsKeyword("LIMIT")) {
+        parseLimit(stmt);
     }
     if (peek().type == TokenType::Symbol && peek().text == ";") {
         advance();

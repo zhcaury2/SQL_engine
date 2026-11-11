@@ -15,6 +15,20 @@ static std::string parsedWhere(const std::string& sql) {
     return stmt.where ? show(*stmt.where) : "";
 }
 
+static SelectStatement parseOnly(const std::string& sql) {
+    Parser p(parseSQLquery(sql));
+    return p.parseSelect();
+}
+
+static std::string showOrder(const SelectStatement& s) {
+    std::string out;
+    for (const auto& k : s.orderBy) {
+        if (!out.empty()) out += ",";
+        out += k.column + (k.descending ? " DESC" : " ASC");
+    }
+    return out;
+}
+
 TEST(Parser, ParseSelect) {
     auto t = parseSQLquery("SELECT name FROM users WHERE age>21");
     Parser parser(t);
@@ -211,6 +225,106 @@ TEST(Parser, MalformedConditionsThrow) {
         "SELECT * FROM t WHERE a = 1 AND ;",             // operator then terminator
         "SELECT * FROM t WHERE NOT a = 1",               // NOT isn't supported
         "SELECT * FROM t WHERE a = 1 AND (b = 2 OR)",    // dangling OR inside parens
+    }) {
+        Parser p(parseSQLquery(sql));
+        EXPECT_THROW(p.parseSelect(), std::runtime_error) << sql;
+    }
+}
+
+TEST(Parser, NeitherClausePresent) {
+    auto s = parseOnly("SELECT * FROM t");
+    EXPECT_TRUE(s.orderBy.empty());
+    EXPECT_FALSE(s.limit.has_value());
+}
+
+TEST(Parser, OrderByDefaultsToAscending) {
+    EXPECT_EQ(showOrder(parseOnly("SELECT * FROM t ORDER BY a")), "a ASC");
+}
+
+TEST(Parser, ExplicitAscAndDesc) {
+    EXPECT_EQ(showOrder(parseOnly("SELECT * FROM t ORDER BY a ASC")), "a ASC");
+    EXPECT_EQ(showOrder(parseOnly("SELECT * FROM t ORDER BY a DESC")), "a DESC");
+}
+
+TEST(Parser, MultipleKeysKeepTheirOrderAndDirections) {
+    EXPECT_EQ(showOrder(parseOnly("SELECT * FROM t ORDER BY a DESC, b, c ASC")),
+              "a DESC,b ASC,c ASC");
+}
+
+TEST(Parser, KeywordsAnyCaseAndColumnsLowercased) {
+    EXPECT_EQ(showOrder(parseOnly("select * from t order by Year desc")), "year DESC");
+}
+
+TEST(Parser, LimitValue) {
+    auto s = parseOnly("SELECT * FROM t LIMIT 5");
+    ASSERT_TRUE(s.limit.has_value());
+    EXPECT_EQ(*s.limit, 5u);
+}
+
+TEST(Parser, LimitZeroIsAllowed) {
+    auto s = parseOnly("SELECT * FROM t LIMIT 0");
+    ASSERT_TRUE(s.limit.has_value());
+    EXPECT_EQ(*s.limit, 0u);
+}
+
+TEST(Parser, OrderByAndLimitTogether) {
+    auto s = parseOnly("SELECT * FROM t ORDER BY a DESC LIMIT 3");
+    EXPECT_EQ(showOrder(s), "a DESC");
+    ASSERT_TRUE(s.limit.has_value());
+    EXPECT_EQ(*s.limit, 3u);
+}
+
+TEST(Parser, AfterCompoundWhere) {
+    auto s = parseOnly("SELECT a FROM t WHERE a = 1 OR (b = 2 AND c = 3) ORDER BY a LIMIT 10");
+    ASSERT_TRUE(s.where != nullptr);
+    EXPECT_EQ(s.where->kind, Expr::Kind::Or);
+    EXPECT_EQ(showOrder(s), "a ASC");
+    EXPECT_EQ(*s.limit, 10u);
+}
+
+TEST(Parser, TrailingSemicolon) {
+    auto s = parseOnly("SELECT * FROM t ORDER BY a LIMIT 3;");
+    EXPECT_EQ(showOrder(s), "a ASC");
+    EXPECT_EQ(*s.limit, 3u);
+}
+
+TEST(Parser, ColumnNamesThatMerelyStartWithKeywordsAreFine) {
+    auto s = parseOnly("SELECT orders FROM t ORDER BY orders, limiter");
+    EXPECT_EQ(showOrder(s), "orders ASC,limiter ASC");
+}
+
+TEST(Parser, SelectListAndWhereAreUnaffected) {
+    auto s = parseOnly("SELECT a, b FROM t WHERE a > 1 ORDER BY b");
+    EXPECT_EQ(s.columns.size(), 2u);
+    EXPECT_EQ(s.table, "t");
+    EXPECT_TRUE(s.where != nullptr);
+}
+
+TEST(Parser, MalformedClausesThrow) {
+    for (const char* sql : {
+        "SELECT * FROM t ORDER a",                    // missing BY
+        "SELECT * FROM t ORDER BY",                   // no column
+        "SELECT * FROM t ORDER BY ,a",                // leading comma
+        "SELECT * FROM t ORDER BY a,",                // trailing comma
+        "SELECT * FROM t ORDER BY a b",               // missing comma
+        "SELECT * FROM t ORDER BY a DESC DESC",       // doubled direction
+        "SELECT * FROM t ORDER BY a DESC,",           // trailing comma after direction
+        "SELECT * FROM t ORDER BY 1",                 // number, not a column
+        "SELECT * FROM t ORDER BY 'a'",               // string, not a column
+        "SELECT * FROM t ORDER BY a ORDER BY b",      // repeated clause
+        "SELECT * FROM t ORDER BY a WHERE a = 1",     // WHERE after ORDER BY
+        "SELECT * FROM t WHERE ORDER BY a",           // WHERE with no condition
+        "SELECT * FROM t LIMIT",                      // no count
+        "SELECT * FROM t LIMIT -1",                   // negative
+        "SELECT * FROM t LIMIT 2.5",                  // not an integer
+        "SELECT * FROM t LIMIT 'x'",                  // string
+        "SELECT * FROM t LIMIT a",                    // identifier
+        "SELECT * FROM t LIMIT 1e3",                  // scientific notation
+        "SELECT * FROM t LIMIT 5 10",                 // extra number
+        "SELECT * FROM t LIMIT 5 LIMIT 6",            // repeated clause
+        "SELECT * FROM t LIMIT 5 ORDER BY a",         // wrong clause order
+        "SELECT * FROM t ORDER BY a LIMIT",           // LIMIT with no count
+        "SELECT * FROM t LIMIT 99999999999999999999999",  // out of range
     }) {
         Parser p(parseSQLquery(sql));
         EXPECT_THROW(p.parseSelect(), std::runtime_error) << sql;

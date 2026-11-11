@@ -1,5 +1,6 @@
 #include "operators.h"
-#include "parse.h"
+#include <algorithm>
+
 
 static std::unique_ptr<Predicate> makeBinary(Predicate::Kind kind,
                                              std::unique_ptr<Predicate> left,
@@ -42,6 +43,18 @@ bool Filter::next(Row& out) {
 static int compareNumbers(double a, double b) {
     if (a < b) return -1;
     if (a > b) return 1;
+    return 0;
+}
+
+static int compareValues(const Value& a, const Value& b) {
+    if (a.index() != b.index()) return a.index() < b.index() ? -1 : 1;
+    if (const double* x = std::get_if<double>(&a)) {
+        return compareNumbers(*x, std::get<double>(b));
+    }
+    if (const std::string* s = std::get_if<std::string>(&a)) {
+        int c = s->compare(std::get<std::string>(b));
+        return c < 0 ? -1 : (c > 0 ? 1 : 0);
+    }
     return 0;
 }
 
@@ -112,3 +125,40 @@ std::unique_ptr<Predicate> makeCompare(size_t column, const std::string& op, Val
     predicate->literal = std::move(literal);
     return predicate;
 }
+
+Sort::Sort(std::unique_ptr<Operator> c, std::vector<SortKey> order)
+    : child(std::move(c)), orderBy(std::move(order)) {
+    if (orderBy.empty()) {
+        throw std::runtime_error("Sort requires at least one sort key");
+    }
+}
+
+bool Sort::next(Row& out) {
+    if (!loaded) {
+        Row row;
+        while (child->next(row)) rows.push_back(std::move(row));
+        std::stable_sort(rows.begin(), rows.end(), [&](const Row& a, const Row& b) {
+        for (const auto& key : orderBy) {
+            int c = compareValues(a[key.column], b[key.column]);
+            if (c != 0) return key.descending ? c > 0 : c < 0;
+        }
+            return false;
+        });
+        loaded = true;
+    }
+    if (currentRow >= rows.size()) return false;
+    out = rows[currentRow++];
+    return true;
+}
+
+
+Limit::Limit(std::unique_ptr<Operator> c, size_t l)
+    : child(std::move(c)), count(l) {}
+
+bool Limit::next(Row& out) {
+    if (returned >= count) return false;
+    if (!child->next(out)) return false;
+    ++returned;
+    return true;
+}
+
