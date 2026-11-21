@@ -1,4 +1,5 @@
 #include "parse.h"
+#include "helpers.h"
 #include <stdexcept>
 using std::vector;
 using std::string;
@@ -99,7 +100,7 @@ std::unique_ptr<Expr> Parser::parseComparison(){
     node->column = expect(TokenType::Identifier, "").text;
 
     Token symbol = expect(TokenType::Symbol, "");
-    if (symbol.text != ">" && symbol.text != "<" && symbol.text != "=" && symbol.text != "<=" && symbol.text != ">=" && symbol.text != "!=") {
+    if (!validSymbol(symbol.text)) {
         throw std::runtime_error("Expected comparison operator, got: " + describe(symbol));
     }
 

@@ -52,6 +52,30 @@ static std::map<std::string, Table> makeCapitalizedCatalog() {
     return c;
 }
 
+static std::map<std::string, Table> makeLikeCatalog() {
+    Table t;
+    t.name = "movies";
+    t.columns = {"title", "genres", "year", "price"};
+    for (size_t i = 0; i < t.columns.size(); ++i) t.colIndex[t.columns[i]] = i;
+    t.rows = {
+        {std::string("Alien"),         std::string("Horror;Sci-Fi"),       1979.0, 9.99},
+        {std::string("Heat"),          std::string("Crime;Drama"),         1995.0, 8.5},
+        {std::string("Up"),            std::string("Animation;Adventure"), 2009.0, 8.5},
+        {std::string("Coco"),          std::string("Animation;Family"),    2017.0, 10.0},
+        {std::string("The Godfather"), std::string("Crime;Drama"),         1972.0, 12.99},
+        {std::string("Casablanca"),    std::string("Drama;Romance;War"),   1942.0, 7.99},
+        {std::string("Mystery Box"),   std::monostate{},                   2020.0, 5.0},
+    };
+    std::map<std::string, Table> c;
+    c.emplace("movies", std::move(t));
+    return c;
+}
+
+static Names likeTitles(const std::string& sql, const std::map<std::string, Table>& c) {
+    return textColumn(runQuery(sql, c), 0);
+}
+
+
 using Names = std::vector<std::string>;
 
 TEST(Planner, SelectStarReturnsAllRowsAndColumns) {
@@ -550,6 +574,101 @@ TEST(OrderLimitPlanner, MalformedClausesThrowEndToEnd) {
         "SELECT * FROM films ORDER year",
         "SELECT * FROM films LIMIT -1",
         "SELECT * FROM films LIMIT 5 ORDER BY year",
+    }) {
+        EXPECT_THROW(runQuery(sql, c), std::runtime_error) << sql;
+    }
+}
+
+TEST(LikePlanner, ContainsPatternOnAListColumn) {
+    auto c = makeLikeCatalog();
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE genres LIKE '%Drama%'", c),
+              (Names{"Heat", "The Godfather", "Casablanca"}));
+}
+
+TEST(LikePlanner, PrefixSuffixAndInnerPatterns) {
+    auto c = makeLikeCatalog();
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE genres LIKE 'Animation%'", c), (Names{"Up", "Coco"}));
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE genres LIKE '%Family'", c),   (Names{"Coco"}));
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE genres LIKE '%;Drama'", c),
+              (Names{"Heat", "The Godfather"}));
+}
+
+TEST(LikePlanner, LikeOnTheTitleColumn) {
+    auto c = makeLikeCatalog();
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE title LIKE 'The %'", c), (Names{"The Godfather"}));
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE title LIKE '____'", c),  (Names{"Heat", "Coco"}));
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE title LIKE '_oco'", c),  (Names{"Coco"}));
+}
+
+TEST(LikePlanner, PatternsAreCaseSensitive) {
+    auto c = makeLikeCatalog();
+    EXPECT_TRUE(runQuery("SELECT title FROM movies WHERE genres LIKE '%drama%'", c).empty());
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE title LIKE '%A%'", c), (Names{"Alien"}));
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE title LIKE '%a%'", c),
+              (Names{"Heat", "The Godfather", "Casablanca"}));
+}
+
+TEST(LikePlanner, KeywordsAndNamesAreCaseInsensitive) {
+    auto c = makeLikeCatalog();
+    EXPECT_EQ(likeTitles("select TITLE from MOVIES where GENRES like '%Drama%'", c),
+              (Names{"Heat", "The Godfather", "Casablanca"}));
+}
+
+TEST(LikePlanner, NullGenreNeverMatches) {
+    auto c = makeLikeCatalog();
+    EXPECT_EQ(runQuery("SELECT title FROM movies WHERE genres LIKE '%'", c).size(), 6u);   // not Mystery Box
+    EXPECT_EQ(runQuery("SELECT title FROM movies WHERE genres LIKE '%' OR title = 'Mystery Box'", c).size(), 7u);
+}
+
+TEST(LikePlanner, NumericColumnNeverMatchesLike) {
+    auto c = makeLikeCatalog();
+    EXPECT_TRUE(runQuery("SELECT title FROM movies WHERE year LIKE '19%'", c).empty());
+    EXPECT_TRUE(runQuery("SELECT title FROM movies WHERE year LIKE '%'", c).empty());
+}
+
+TEST(LikePlanner, CombinesWithAndOrAndParentheses) {
+    auto c = makeLikeCatalog();
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE genres LIKE '%Drama%' AND year < 1990", c),
+              (Names{"The Godfather", "Casablanca"}));
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE genres LIKE '%Animation%' OR genres LIKE '%War%'", c),
+              (Names{"Up", "Coco", "Casablanca"}));
+    EXPECT_EQ(likeTitles("SELECT title FROM movies "
+                         "WHERE (genres LIKE '%Crime%' OR genres LIKE '%Horror%') AND year > 1990", c),
+              (Names{"Heat"}));
+}
+
+TEST(LikePlanner, WorksWithOrderByAndLimit) {
+    auto c = makeLikeCatalog();
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE genres LIKE '%Drama%' ORDER BY year DESC", c),
+              (Names{"Heat", "The Godfather", "Casablanca"}));
+    EXPECT_EQ(likeTitles("SELECT title FROM movies WHERE genres LIKE '%Drama%' ORDER BY year LIMIT 2", c),
+              (Names{"Casablanca", "The Godfather"}));
+}
+
+TEST(LikePlanner, SelectStarAndTrailingSemicolon) {
+    auto c = makeLikeCatalog();
+    auto rows = runQuery("SELECT * FROM movies WHERE title LIKE 'Co%';", c);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].size(), 4u);
+}
+
+TEST(LikePlanner, NoMatchesGivesNoRows) {
+    auto c = makeLikeCatalog();
+    EXPECT_TRUE(runQuery("SELECT * FROM movies WHERE genres LIKE '%Western%'", c).empty());
+}
+
+TEST(LikePlanner, UnknownColumnThrows) {
+    auto c = makeLikeCatalog();
+    EXPECT_THROW(runQuery("SELECT * FROM movies WHERE nope LIKE '%'", c), std::runtime_error);
+}
+
+TEST(LikePlanner, MalformedLikeThrowsEndToEnd) {
+    auto c = makeLikeCatalog();
+    for (const char* sql : {
+        "SELECT * FROM movies WHERE title LIKE 5",
+        "SELECT * FROM movies WHERE title LIKE",
+        "SELECT * FROM movies WHERE title NOT LIKE 'A%'",
+        "SELECT * FROM movies WHERE title LIKE year",
     }) {
         EXPECT_THROW(runQuery(sql, c), std::runtime_error) << sql;
     }

@@ -10,3 +10,8 @@ std::string toUpper(std::string s) {
     for (char& ch : s) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
     return s;
 }
+
+bool validSymbol(std::string s){
+    if (s != "=" && s != "!=" && s != "<" && s != "<=" && s != ">" && s != ">=" && s != "like") return false;
+    return true;
+}

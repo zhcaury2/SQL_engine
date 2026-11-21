@@ -146,3 +146,43 @@ TEST(Tokenizer, CommaAfterDescIsSeparateToken) {
     EXPECT_EQ(t[1].text, ",");
     EXPECT_EQ(t[2].text, "a");
 }
+
+TEST(Tokenizer, LikeIsAKeywordStoredUppercase) {
+    auto t = parseSQLquery("like LIKE Like");
+    ASSERT_EQ(t.size(), 3u);
+    for (const auto& tok : t) {
+        EXPECT_EQ(tok.type, TokenType::Keyword) << tok.text;
+        EXPECT_EQ(tok.text, "LIKE");
+    }
+}
+
+TEST(Tokenizer, WordsContainingLikeAreIdentifiers) {
+    auto t = parseSQLquery("likes liked likelihood unlike like_count _like");
+    ASSERT_EQ(t.size(), 6u);
+    for (const auto& tok : t) EXPECT_EQ(tok.type, TokenType::Identifier) << tok.text;
+}
+
+TEST(Tokenizer, WildcardsInsideAStringStayInTheString) {
+    auto t = parseSQLquery("'%a_b%'");
+    ASSERT_EQ(t.size(), 1u);
+    EXPECT_EQ(t[0].type, TokenType::String);
+    EXPECT_EQ(t[0].text, "%a_b%");
+}
+
+TEST(Tokenizer, LikeInsideAStringIsNotAKeyword) {
+    auto t = parseSQLquery("'x like y'");
+    ASSERT_EQ(t.size(), 1u);
+    EXPECT_EQ(t[0].type, TokenType::String);
+}
+
+TEST(Tokenizer, NoSpaceBeforeThePattern) {
+    auto t = parseSQLquery("name LIKE'a%'");
+    ASSERT_EQ(t.size(), 3u);
+    EXPECT_EQ(t[1].text, "LIKE");
+    EXPECT_EQ(t[2].type, TokenType::String);
+    EXPECT_EQ(t[2].text, "a%");
+}
+
+TEST(Tokenizer, UnterminatedPatternThrows) {
+    EXPECT_THROW(parseSQLquery("name LIKE '%abc"), std::runtime_error);
+}

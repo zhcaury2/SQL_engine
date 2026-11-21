@@ -7,7 +7,7 @@
 #include "helpers.h"
 
 
-static const std::string keywords[] = {"select", "from", "where", "and", "or", "limit", "order", "by", "asc", "desc"};
+static const std::string keywords[] = {"select", "from", "where", "and", "or", "limit", "order", "by", "asc", "desc", "like"};
 
 bool checkKeywords(const std::string &identifier) {
     std::string lowerIdentifier = toLower(identifier);

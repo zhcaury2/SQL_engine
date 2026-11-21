@@ -34,6 +34,29 @@ static Table makeFlags() {
     return t;
 }
 
+static Table makeWords() {
+    Table t;
+    t.name = "words";
+    t.columns = {"id", "genre", "n"};
+    for (size_t i = 0; i < t.columns.size(); ++i) t.colIndex[t.columns[i]] = i;
+    t.rows = {
+        {std::string("r1"), std::string("Drama"),              1.0},
+        {std::string("r2"), std::string("Crime;Drama"),        2.0},
+        {std::string("r3"), std::string("Action;Crime;Drama"), 3.0},
+        {std::string("r4"), std::string("Comedy"),             4.0},
+        {std::string("r5"), std::string("drama"),              5.0},
+        {std::string("r6"), std::monostate{},                  6.0},
+        {std::string("r7"), 42.0,                              7.0},
+        {std::string("r8"), std::string(""),                   8.0},
+    };
+    return t;
+}
+
+static std::unique_ptr<Predicate> like(const std::string& pattern) {
+    return makeCompare(1, "LIKE", Value(pattern));
+}
+
+
 static Names runPred(const Table& t, std::unique_ptr<Predicate> p) {
     Filter f(std::make_unique<Scan>(t), std::move(p));
     Names out;
@@ -556,4 +579,201 @@ TEST(SortOp, ProjectAboveSortStillSeesSortedOrder) {
     ASSERT_TRUE(p.next(row));
     ASSERT_EQ(row.size(), 1u);
     EXPECT_EQ(std::get<std::string>(row[0]), "r1");
+}
+
+struct LikeCase { const char* text; const char* pattern; bool expected; };
+
+static void checkCases(const std::vector<LikeCase>& cases) {
+    for (const auto& c : cases) {
+        EXPECT_EQ(likeMatch(c.text, c.pattern), c.expected)
+            << "text='" << c.text << "' pattern='" << c.pattern << "'";
+    }
+}
+
+TEST(LikeMatch, ExactMatchesWithoutWildcards) {
+    checkCases({
+        {"abc", "abc", true},  {"abc", "abd", false},
+        {"abc", "ab", false},  {"ab", "abc", false},
+        {"", "", true},        {"a", "", false},     {"", "a", false},
+    });
+}
+
+TEST(LikeMatch, IsCaseSensitive) {
+    checkCases({{"ABC", "abc", false}, {"abc", "ABC", false}, {"Drama", "Drama", true}});
+}
+
+TEST(LikeMatch, UnderscoreMatchesExactlyOneCharacter) {
+    checkCases({
+        {"a", "_", true},      {"", "_", false},      {"ab", "_", false},
+        {"abc", "a_c", true},  {"ac", "a_c", false},
+        {"abc", "___", true},  {"abc", "__", false},  {"abc", "____", false},
+        {"a b", "a_b", true},  {"a\nb", "a_b", true}, {"a\tb", "a_b", true},
+    });
+}
+
+TEST(LikeMatch, PercentMatchesAnyRunIncludingEmpty) {
+    checkCases({
+        {"", "%", true},       {"abc", "%", true},    {"abc", "%%", true},
+        {"abc", "%%%", true},  {"", "%%", true},
+        {"abc", "a%", true},   {"abc", "%c", true},   {"abc", "%b%", true},
+        {"abc", "a%c", true},  {"ac", "a%c", true},
+        {"abc", "a%d", false}, {"abc", "%d", false},  {"abc", "d%", false},
+        {"a", "a%a", false},   {"aa", "a%a", true},
+        {"abc", "%abc%", true}, {"abc", "%abcd%", false},
+    });
+}
+
+TEST(LikeMatch, WildcardsCombine) {
+    checkCases({
+        {"abc", "_%", true},   {"", "_%", false},
+        {"a", "_%_", false},   {"ab", "_%_", true},
+        {"abc", "%_c", true},  {"c", "%_c", false},
+        {"ac", "_%c", true},   {"c", "_%c", false},
+        {"abc", "%_", true},   {"abc", "a_%", true},  {"a", "a_%", false},
+    });
+}
+
+TEST(LikeMatch, NeedsBacktrackingToFindTheRightSplit) {
+    checkCases({
+        {"aab", "%ab", true},            {"abab", "%ab", true},
+        {"abcabd", "%abd", true},        {"abcabd", "a%abd", true},
+        {"mississippi", "%iss%ppi", true},
+        {"mississippi", "%ssip%", true},
+        {"mississippi", "%sss%", false},
+        {"mississippi", "m%iss%pi", true},
+        {"mississippi", "m%iss%pix", false},
+        {"aaa", "a%a%a", true},          {"aa", "a%a%a", false},
+        {"abcbc", "%bc", true},          {"abxabxab", "%abxab", true},
+    });
+}
+
+TEST(LikeMatch, OtherCharactersAreLiteral) {
+    // No regex behavior and no escape character.
+    checkCases({
+        {"a.c", "a.c", true},   {"abc", "a.c", false},
+        {"a*c", "a*c", true},   {"abc", "a*c", false},
+        {"[a]", "[a]", true},   {"a", "[a]", false},
+        {"(a)", "(a)", true},   {"a+b", "a+b", true},  {"x^y", "x^y", true},
+        {"a\\b", "a\\b", true},               // backslash is an ordinary character
+    });
+}
+
+TEST(LikeMatch, PercentAndUnderscoreInTheTextAreJustCharacters) {
+    checkCases({
+        {"50%", "50%", true},   {"500", "50%", true},
+        {"50%", "50_", true},   {"5_0", "5_0", true},  {"5x0", "5_0", true},
+    });
+}
+
+TEST(LikeMatch, WhitespaceIsSignificant) {
+    checkCases({{"abc ", "abc", false}, {"abc", "abc ", false}, {"abc ", "abc%", true}});
+}
+
+TEST(LikeMatch, MatchesBytesNotCharacters) {
+    // Documented limitation: "é" is two bytes in UTF-8.
+    EXPECT_FALSE(likeMatch("\xC3\xA9", "_"));
+    EXPECT_TRUE(likeMatch("\xC3\xA9", "__"));
+    EXPECT_TRUE(likeMatch("caf\xC3\xA9", "caf%"));
+}
+
+TEST(LikeMatch, ManyWildcardsDoNotExplode) {
+    // A naive recursive matcher takes exponential time on this input
+    // (the test would appear to hang). A two-pointer matcher with one
+    // backtrack point finishes instantly.
+    std::string text(60, 'a');
+    EXPECT_FALSE(likeMatch(text, "%a%a%a%a%a%a%a%a%a%a%b"));
+    EXPECT_TRUE(likeMatch(text, "%a%a%a%a%a%a%a%a%a%a%"));
+}
+
+TEST(LikePredicate, ContainsPattern) {
+    Table t = makeWords();
+    EXPECT_EQ(runPred(t, like("%Drama%")), (Names{"r1", "r2", "r3"}));
+}
+
+TEST(LikePredicate, PrefixAndSuffixPatterns) {
+    Table t = makeWords();
+    EXPECT_EQ(runPred(t, like("Crime%")), (Names{"r2"}));
+    EXPECT_EQ(runPred(t, like("%Drama")),  (Names{"r1", "r2", "r3"}));
+    EXPECT_EQ(runPred(t, like("%;%")),     (Names{"r2", "r3"}));
+}
+
+TEST(LikePredicate, NoWildcardsMeansExactMatch) {
+    Table t = makeWords();
+    EXPECT_EQ(runPred(t, like("Drama")), (Names{"r1"}));
+}
+
+TEST(LikePredicate, UnderscoreMatchesOneCharacter) {
+    Table t = makeWords();
+    EXPECT_EQ(runPred(t, like("Dram_")), (Names{"r1"}));
+    EXPECT_EQ(runPred(t, like("_____")), (Names{"r1", "r5"}));   // five characters
+    EXPECT_TRUE(runPred(t, like("Dram")).empty());
+}
+
+TEST(LikePredicate, MatchesAreCaseSensitive) {
+    Table t = makeWords();
+    EXPECT_EQ(runPred(t, like("%drama%")), (Names{"r5"}));
+}
+
+TEST(LikePredicate, PercentAloneMatchesEveryStringButNotNullOrNumbers) {
+    Table t = makeWords();
+    // r6 is NULL and r7 is a number, so neither appears
+    EXPECT_EQ(runPred(t, like("%")), (Names{"r1", "r2", "r3", "r4", "r5", "r8"}));
+}
+
+TEST(LikePredicate, EmptyPatternMatchesOnlyTheEmptyString) {
+    Table t = makeWords();
+    EXPECT_EQ(runPred(t, like("")), (Names{"r8"}));
+}
+
+TEST(LikePredicate, NumberCellsNeverMatchEvenIfTheDigitsDo) {
+    Table t = makeWords();
+    EXPECT_TRUE(runPred(t, like("4%")).empty());      // r7 holds 42.0
+    EXPECT_TRUE(runPred(t, like("42")).empty());
+}
+
+TEST(LikePredicate, NullCellNeverMatches) {
+    Table t = makeWords();
+    EXPECT_EQ(runPred(t, makeOr(like("%Comedy%"), makeCompare(0, "=", Value(std::string("r6"))))),
+              (Names{"r4", "r6"}));                   // r6 is only there because of the other side
+}
+
+TEST(LikePredicate, CombinesWithAnd) {
+    Table t = makeWords();
+    EXPECT_EQ(runPred(t, makeAnd(like("%Drama%"), like("Crime%"))), (Names{"r2"}));
+    EXPECT_EQ(runPred(t, makeAnd(like("%Drama%"), makeCompare(2, ">", Value(2.0)))), (Names{"r3"}));
+}
+
+TEST(LikePredicate, CombinesWithOr) {
+    Table t = makeWords();
+    EXPECT_EQ(runPred(t, makeOr(like("Comedy"), like("Action%"))), (Names{"r3", "r4"}));
+}
+
+TEST(LikePredicate, PercentInTheDataIsJustACharacter) {
+    Table t;
+    t.columns = {"id", "t"};
+    t.rows = {
+        {std::string("a"), std::string("50%")},
+        {std::string("b"), std::string("500")},
+        {std::string("c"), std::string("5")},
+    };
+    EXPECT_EQ(runPred(t, makeCompare(1, "LIKE", Value(std::string("50%")))), (Names{"a", "b"}));
+    EXPECT_EQ(runPred(t, makeCompare(1, "LIKE", Value(std::string("50_")))), (Names{"a", "b"}));
+    EXPECT_EQ(runPred(t, makeCompare(1, "LIKE", Value(std::string("5%")))),  (Names{"a", "b", "c"}));
+}
+
+TEST(LikePredicate, EmptyTable) {
+    Table t = makeWords();
+    t.rows.clear();
+    EXPECT_TRUE(runPred(t, like("%")).empty());
+}
+
+TEST(LikePredicate, ResultsKeepTableOrder) {
+    Table t = makeWords();
+    auto r = runPred(t, like("%Drama%"));
+    EXPECT_TRUE(std::is_sorted(r.begin(), r.end()));
+}
+
+TEST(LikePredicate, NonStringPatternThrowsWhenBuilt) {
+    EXPECT_THROW(makeCompare(1, "LIKE", Value(5.0)), std::runtime_error);
+    EXPECT_THROW(makeCompare(1, "LIKE", Value(std::monostate{})), std::runtime_error);
 }

@@ -1,3 +1,4 @@
+#include "helpers.h"
 #include "operators.h"
 #include <algorithm>
 
@@ -65,6 +66,7 @@ static CmpOp parseOperator(const std::string& op) {
     if (op == "<=") return CmpOp::Le;
     if (op == ">") return CmpOp::Gt;
     if (op == ">=") return CmpOp::Ge;
+    if (op == "LIKE") return CmpOp::Like;
     throw std::runtime_error("Unknown operator: " + op);
 }
 
@@ -76,6 +78,7 @@ static bool applyOperator(CmpOp op, int c) {
         case CmpOp::Le: return c <= 0;
         case CmpOp::Gt: return c > 0;
         case CmpOp::Ge: return c >= 0;
+        case CmpOp::Like: return false;
     }
     return false;
 }
@@ -100,6 +103,7 @@ static bool compareCell(const Predicate& predicate, const Value& cell) {
     if (std::holds_alternative<std::string>(cell) && std::holds_alternative<std::string>(predicate.literal)) {
         const auto& a = std::get<std::string>(cell);
         const auto& b = std::get<std::string>(predicate.literal);
+        if (predicate.op == CmpOp::Like) return likeMatch(a, b);
         return applyOperator(predicate.op, a.compare(b));
     }
     return false;
@@ -118,6 +122,9 @@ bool evaluate(const Predicate& predicate, const Row& row) {
 }
 
 std::unique_ptr<Predicate> makeCompare(size_t column, const std::string& op, Value literal) {
+    if (op == "LIKE" && !std::holds_alternative<std::string>(literal)) {
+        throw std::runtime_error("LIKE requires a string literal");
+    }
     auto predicate = std::make_unique<Predicate>();
     predicate->kind = Predicate::Kind::Compare;
     predicate->column = column;

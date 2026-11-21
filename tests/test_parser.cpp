@@ -330,3 +330,83 @@ TEST(Parser, MalformedClausesThrow) {
         EXPECT_THROW(p.parseSelect(), std::runtime_error) << sql;
     }
 }
+
+TEST(Parser, LeafFieldsAreFilled) {
+    auto s = parseOnly("SELECT * FROM t WHERE genres LIKE '%Drama%'");
+    ASSERT_TRUE(s.where != nullptr);
+    EXPECT_EQ(s.where->kind, Expr::Kind::Comparison);
+    EXPECT_EQ(s.where->column, "genres");
+    EXPECT_EQ(s.where->op, "LIKE");
+    EXPECT_EQ(s.where->value, "%Drama%");
+    EXPECT_EQ(s.where->valueType, TokenType::String);
+}
+
+TEST(Parser, KeywordAnyCaseAndColumnLowercased) {
+    auto s = parseOnly("select * from t where Genres like 'x'");
+    ASSERT_TRUE(s.where != nullptr);
+    EXPECT_EQ(s.where->column, "genres");
+    EXPECT_EQ(s.where->op, "LIKE");
+}
+
+TEST(Parser, PatternKeepsSpacesAndWildcards) {
+    auto s = parseOnly("SELECT * FROM t WHERE a LIKE 'a b_%'");
+    EXPECT_EQ(s.where->value, "a b_%");
+}
+
+TEST(Parser, EmptyPatternIsAllowed) {
+    auto s = parseOnly("SELECT * FROM t WHERE a LIKE ''");
+    ASSERT_TRUE(s.where != nullptr);
+    EXPECT_EQ(s.where->value, "");
+}
+
+TEST(Parser, InsideACompoundCondition) {
+    auto s = parseOnly("SELECT * FROM t WHERE a LIKE 'x%' AND (b LIKE '%y' OR c = 1)");
+    ASSERT_TRUE(s.where != nullptr);
+    ASSERT_EQ(s.where->kind, Expr::Kind::And);
+    EXPECT_EQ(s.where->left->op, "LIKE");
+    ASSERT_EQ(s.where->right->kind, Expr::Kind::Or);
+    EXPECT_EQ(s.where->right->left->op, "LIKE");
+    EXPECT_EQ(s.where->right->right->op, "=");
+    EXPECT_EQ(s.where->right->right->valueType, TokenType::Number);
+}
+
+TEST(Parser, ChainsAreLeftAssociative) {
+    auto s = parseOnly("SELECT * FROM t WHERE a LIKE 'x' OR a LIKE 'y' OR a LIKE 'z'");
+    ASSERT_EQ(s.where->kind, Expr::Kind::Or);
+    EXPECT_EQ(s.where->left->kind, Expr::Kind::Or);
+    EXPECT_EQ(s.where->right->value, "z");
+}
+
+TEST(Parser, WorksWithOrderByLimitAndSemicolon) {
+    auto s = parseOnly("SELECT a FROM t WHERE a LIKE '%x%' ORDER BY a DESC LIMIT 3;");
+    EXPECT_EQ(s.where->op, "LIKE");
+    ASSERT_EQ(s.orderBy.size(), 1u);
+    EXPECT_EQ(*s.limit, 3u);
+}
+
+TEST(Parser, OrdinaryOperatorsAreUnaffected) {
+    auto s = parseOnly("SELECT * FROM t WHERE a >= 5");
+    EXPECT_EQ(s.where->op, ">=");
+}
+
+TEST(Parser, MalformedLikeConditionsThrow) {
+    for (const char* sql : {
+        "SELECT * FROM t WHERE a LIKE",                  // no pattern
+        "SELECT * FROM t WHERE a LIKE 5",                // number
+        "SELECT * FROM t WHERE a LIKE 5.5",              // decimal
+        "SELECT * FROM t WHERE a LIKE b",                // identifier
+        "SELECT * FROM t WHERE a LIKE ('x')",            // parenthesized
+        "SELECT * FROM t WHERE a LIKE LIKE 'x'",         // doubled keyword
+        "SELECT * FROM t WHERE LIKE 'x'",                // no column
+        "SELECT * FROM t WHERE a LIKE 'x' 'y'",          // two patterns
+        "SELECT * FROM t WHERE a LIKE 'x' LIKE 'y'",     // two operators
+        "SELECT * FROM t WHERE a = LIKE 'x'",            // operator then keyword
+        "SELECT * FROM t WHERE a 'x' LIKE",              // wrong order
+        "SELECT * FROM t WHERE a NOT LIKE 'x'",          // NOT isn't supported yet
+        "SELECT * FROM t WHERE a LIKE 'x' AND",          // dangling AND
+        "SELECT like FROM t",                            // reserved word as a column
+    }) {
+        Parser p(parseSQLquery(sql));
+        EXPECT_THROW(p.parseSelect(), std::runtime_error) << sql;
+    }
+}

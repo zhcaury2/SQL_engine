@@ -9,7 +9,8 @@ enum class CmpOp {
     Lt,
     Le,
     Gt,
-    Ge
+    Ge, 
+    Like
 };
 
 struct Predicate {
@@ -35,6 +36,8 @@ std::unique_ptr<Predicate> makeOr(std::unique_ptr<Predicate> left, std::unique_p
 
 // Executes predicate against row.
 bool evaluate(const Predicate& predicate, const Row& row);
+
+bool likeMatch(const std::string& value, const std::string& pattern);
 
 class Operator {
 public:
