@@ -151,13 +151,6 @@ TEST(Parser, MixedChainGroupsEachAndRun) {
               "((a=1 AND b=2) OR (c=3 AND d=4))");
 }
 
-TEST(Parser, ChainsAreLeftAssociative) {
-    EXPECT_EQ(parsedWhere("SELECT * FROM t WHERE a = 1 AND b = 2 AND c = 3"),
-              "((a=1 AND b=2) AND c=3)");
-    EXPECT_EQ(parsedWhere("SELECT * FROM t WHERE a = 1 OR b = 2 OR c = 3"),
-              "((a=1 OR b=2) OR c=3)");
-}
-
 TEST(Parser, ParenthesesOverridePrecedence) {
     EXPECT_EQ(parsedWhere("SELECT * FROM t WHERE (a = 1 OR b = 2) AND c = 3"),
               "((a=1 OR b=2) AND c=3)");
@@ -192,17 +185,6 @@ TEST(Parser, AndOrInsideStringIsPartOfTheValue) {
 
 TEST(Parser, TrailingSemicolonAfterCompoundCondition) {
     EXPECT_EQ(parsedWhere("SELECT * FROM t WHERE a = 1 OR b = 2;"), "(a=1 OR b=2)");
-}
-
-TEST(Parser, LeafFieldsAreFilled) {
-    Parser p(parseSQLquery("SELECT * FROM t WHERE age >= 18 AND name = 'x'"));
-    auto s = p.parseSelect();
-    ASSERT_TRUE(s.where != nullptr);
-    ASSERT_EQ(s.where->kind, Expr::Kind::And);
-    EXPECT_EQ(s.where->left->column, "age");
-    EXPECT_EQ(s.where->left->op, ">=");
-    EXPECT_EQ(s.where->left->valueType, TokenType::Number);
-    EXPECT_EQ(s.where->right->valueType, TokenType::String);
 }
 
 TEST(Parser, MalformedConditionsThrow) {

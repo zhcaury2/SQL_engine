@@ -12,6 +12,6 @@ std::string toUpper(std::string s) {
 }
 
 bool validSymbol(std::string s){
-    if (s != "=" && s != "!=" && s != "<" && s != "<=" && s != ">" && s != ">=" && s != "like") return false;
+    if (s != "=" && s != "!=" && s != "<" && s != "<=" && s != ">" && s != ">=") return false;
     return true;
 }

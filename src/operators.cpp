@@ -169,3 +169,24 @@ bool Limit::next(Row& out) {
     return true;
 }
 
+bool likeMatch(const std::string& value, const std::string& pattern) {
+    size_t t = 0, p = 0;
+    size_t starP = std::string::npos, starT = 0;
+
+    while (t < value.size()) {
+        if (p < pattern.size() && (pattern[p] == value[t] || pattern[p] == '_')) {
+            ++t;
+            ++p;
+        } else if (p < pattern.size() && pattern[p] == '%') {
+            starP = p++;
+            starT = t;
+        } else if (starP != std::string::npos) {
+            p = starP + 1;
+            t = ++starT;
+        } else {
+            return false;
+        }
+    }
+    while (p < pattern.size() && pattern[p] == '%') ++p;
+    return p == pattern.size();
+}

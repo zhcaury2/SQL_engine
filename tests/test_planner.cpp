@@ -71,12 +71,11 @@ static std::map<std::string, Table> makeLikeCatalog() {
     return c;
 }
 
+using Names = std::vector<std::string>;
+
 static Names likeTitles(const std::string& sql, const std::map<std::string, Table>& c) {
     return textColumn(runQuery(sql, c), 0);
 }
-
-
-using Names = std::vector<std::string>;
 
 TEST(Planner, SelectStarReturnsAllRowsAndColumns) {
     auto catalog = makeCatalog();

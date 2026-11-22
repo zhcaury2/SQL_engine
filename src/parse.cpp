@@ -99,16 +99,20 @@ std::unique_ptr<Expr> Parser::parseComparison(){
     node->kind = Expr::Kind::Comparison;
     node->column = expect(TokenType::Identifier, "").text;
 
-    Token symbol = expect(TokenType::Symbol, "");
-    if (!validSymbol(symbol.text)) {
-        throw std::runtime_error("Expected comparison operator, got: " + describe(symbol));
+    Token op = advance();
+    bool isLike = (op.type == TokenType::Keyword && op.text == "LIKE");
+    bool isComparison = (op.type == TokenType::Symbol && validSymbol(op.text));
+    if (!isLike && !isComparison) {
+        throw std::runtime_error("Expected comparison operator or LIKE, got: " + describe(op));
     }
-
-    node->op = symbol.text;
+    node->op = op.text;
 
     Token value = advance();
     if (value.type != TokenType::Number && value.type != TokenType::String) {
         throw std::runtime_error("Expected number or string, got: " + describe(value));
+    }
+    if (isLike && value.type != TokenType::String) {
+        throw std::runtime_error("LIKE requires a string literal, got: " + describe(value));
     }
     node->value = value.text;
     node->valueType = value.type;
